@@ -9,6 +9,8 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Eye,
+  EyeOff,
   Lock,
   Sparkles,
   ImagePlus,
@@ -18,12 +20,10 @@ import {
   KeyRound,
   Receipt,
   X,
-  Eye,
-  EyeOff,
   AlertTriangle,
   Gift,
   Play,
-} from 'lucide-react';
+} from './ThreeDIcons';
 import {
   AVATAR_PRESETS,
   FramedAvatar,

@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { ExternalLink, Sparkles, X } from 'lucide-react';
+import { ExternalLink, Sparkles, X } from './ThreeDIcons';
 import { Capacitor } from '@capacitor/core';
 import { RealmUser } from '../db/realmLocalDB';
 import { adService, AdConfig } from '../services/adService';

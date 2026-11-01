@@ -459,7 +459,7 @@ async function startServer() {
       interests?: string[];
     };
 
-    const { user, link, rawToken } = serverDB.registerNewUser({
+    const { user, link, rawToken, recoveryCode } = serverDB.registerNewUser({
       nickname,
       avatar_url,
       country,
@@ -467,11 +467,46 @@ async function startServer() {
       interests,
     });
 
-    const { auth_token_hash: _hidden, ...safeSelf } = user;
+    const {
+      auth_token_hash: _hidden,
+      recovery_code_hash: _recoveryHash,
+      ...safeSelf
+    } = user;
     res.json({
       authToken: rawToken,
+      recoveryCode,
       selfUser: { ...safeSelf, is_self: true, is_online: true },
       personalLink: link,
+    });
+
+  });
+
+  app.post('/api/auth/recover', (req: Request, res: Response) => {
+    const recoveryCode =
+      typeof req.body?.recoveryCode === 'string'
+        ? req.body.recoveryCode.trim().toLowerCase()
+        : '';
+    if (!/^[a-f0-9]{64}$/.test(recoveryCode)) {
+      res.status(401).json({ error: 'INVALID_RECOVERY_CODE' });
+      return;
+    }
+
+    const recovered = serverDB.recoverAccount(recoveryCode);
+    if (!recovered) {
+      res.status(401).json({ error: 'INVALID_RECOVERY_CODE' });
+      return;
+    }
+
+    const {
+      auth_token_hash: _hidden,
+      recovery_code_hash: _recoveryHash,
+      ...safeSelf
+    } = recovered.user;
+    res.json({
+      authToken: recovered.rawToken,
+      recoveryCode: recovered.recoveryCode,
+      selfUser: { ...safeSelf, is_self: true, is_online: true },
+      personalLink: recovered.link,
     });
   });
 
@@ -531,7 +566,7 @@ async function startServer() {
       .filter((tx) => tx.user_id === user.id)
       .sort((a, b) => b.created_at - a.created_at);
 
-    const { auth_token_hash: _hidden, ...safeSelf } = user;
+    const { auth_token_hash: _hidden, recovery_code_hash: _recoveryHash, ...safeSelf } = user;
     res.json({
       selfUser: { ...safeSelf, is_self: true, is_online: true },
       personalLink: link,
@@ -606,7 +641,7 @@ async function startServer() {
       peer: serverDB.toPublicUser(user, isUserOnline(user.id)),
     });
 
-    const { auth_token_hash: _hidden, ...safeSelf } = user;
+    const { auth_token_hash: _hidden, recovery_code_hash: _recoveryHash, ...safeSelf } = user;
     res.json({
       selfUser: { ...safeSelf, is_self: true, is_online: true },
       personalLink: link,
@@ -744,7 +779,7 @@ async function startServer() {
       message,
     });
 
-    const { auth_token_hash: _hidden, ...safeSender } = sender;
+    const { auth_token_hash: _hidden, recovery_code_hash: _recoveryHash, ...safeSender } = sender;
     res.json({
       room: formatRoomForUser(room, sender.id),
       message,
@@ -872,7 +907,7 @@ async function startServer() {
       message: msg,
     });
 
-    const { auth_token_hash: _hidden, ...safeSelf } = user;
+    const { auth_token_hash: _hidden, recovery_code_hash: _recoveryHash, ...safeSelf } = user;
     res.json({
       room: formatRoomForUser(room, user.id),
       message: msg,
@@ -1371,7 +1406,7 @@ async function startServer() {
       serverDB.paymentTransactions.set(tx.id, tx);
       serverDB.scheduleSave();
 
-      const { auth_token_hash: _hidden, ...safeSelf } = user;
+      const { auth_token_hash: _hidden, recovery_code_hash: _recoveryHash, ...safeSelf } = user;
       res.json({ ok: true, transaction: tx, selfUser: { ...safeSelf, is_self: true, is_online: true } });
       return;
     } else if (action === 'UNLOCK_QUOTA') {
@@ -1401,7 +1436,7 @@ async function startServer() {
       serverDB.paymentTransactions.set(tx.id, tx);
       serverDB.scheduleSave();
 
-      const { auth_token_hash: _hidden, ...safeSelf } = user;
+      const { auth_token_hash: _hidden, recovery_code_hash: _recoveryHash, ...safeSelf } = user;
       res.json({ ok: true, transaction: tx, selfUser: { ...safeSelf, is_self: true, is_online: true } });
       return;
     }
@@ -1428,6 +1463,49 @@ async function startServer() {
   // 14. ADMIN & MODERATION DASHBOARD (STRICT SERVER-LEVEL RBAC PROTECTION)
   // ============================================================================
 
+  app.post('/api/admin/owner-recovery', async (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    if (!user) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    if (!verifyAccountActive(user, res)) return;
+
+    const configured = process.env.OWNER_RECOVERY_TOKEN?.trim() || '';
+    if (Buffer.byteLength(configured, 'utf8') < 32) {
+      res.status(503).json({ error: 'OWNER_RECOVERY_NOT_CONFIGURED' });
+      return;
+    }
+    if (serverDB.ownerRecoveryCompleted) {
+      res.status(403).json({ error: 'OWNER_RECOVERY_ALREADY_USED' });
+      return;
+    }
+
+    const recoveryToken =
+      typeof req.body?.recoveryToken === 'string' ? req.body.recoveryToken.trim() : '';
+    if (!secureSecretMatches(recoveryToken, configured)) {
+      res.status(401).json({ error: 'INVALID_RECOVERY_TOKEN' });
+      return;
+    }
+    try {
+      if (!(await serverDB.claimReplacementOwner(user.id))) {
+        res.status(409).json({ error: 'OWNER_RECOVERY_NOT_AVAILABLE' });
+        return;
+      }
+    } catch (error) {
+      console.error('Failed to persist replacement owner recovery:', error);
+      res.status(500).json({ error: 'OWNER_RECOVERY_PERSISTENCE_FAILED' });
+      return;
+    }
+
+    const { auth_token_hash: _hidden, recovery_code_hash: _recoveryHash, ...safeSelf } = user;
+    res.json({
+      ok: true,
+      role: user.role,
+      selfUser: { ...safeSelf, is_self: true, is_online: true },
+    });
+  });
+
   // Staff Passcode Verification / Session Elevation
   app.post('/api/admin/staff-verify', (req: Request, res: Response) => {
     const user = serverDB.authenticateToken(extractBearerToken(req));
@@ -1438,7 +1516,7 @@ async function startServer() {
     if (!verifyAccountActive(user, res)) return;
 
     if (user.role === 'owner' || user.role === 'moderator') {
-      const { auth_token_hash: _hidden, ...safeSelf } = user;
+      const { auth_token_hash: _hidden, recovery_code_hash: _recoveryHash, ...safeSelf } = user;
       res.json({
         ok: true,
         role: user.role,
@@ -1466,7 +1544,7 @@ async function startServer() {
       return;
     }
 
-    const { auth_token_hash: _hidden, ...safeSelf } = user;
+    const { auth_token_hash: _hidden, recovery_code_hash: _recoveryHash, ...safeSelf } = user;
     res.json({
       ok: true,
       role: user.role,

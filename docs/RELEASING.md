@@ -46,19 +46,24 @@ base64 fadfadah-upload-key.jks | tr -d '\n'
 
 أضف `ADMOB_APP_ID` إلى **Settings → Secrets and variables → Actions → Variables** بعد صدوره من AdMob. الإعلانات على الخادم متوقفة حاليًا؛ لا تفعّلها ولا تستخدم معرّفات الاختبار للإنتاج قبل إكمال مراجعة AdMob وإعداد وحدات الإعلان وسياسة الخصوصية. مكافآت النقاط تظل متوقفة حتى وجود تحقق خادمي آمن.
 
+## استرداد صلاحية المالك
+
+إذا احتجت إلى إضافة مالك بديل مع الحفاظ على الحساب القديم، انشر تحديث الخادم الذي يتضمن `/api/admin/owner-recovery` أولًا. أنشئ سرًا عشوائيًا لا يقل عن 32 بايت (`openssl rand -hex 32`) وضعه في متغير بيئة الخادم `OWNER_RECOVERY_TOKEN` فقط؛ لا تضعه في التطبيق أو المستودع. أنشئ الحساب الجديد من التطبيق واحفظ رمز استرداده، ثم أدخل سر الخادم مرة واحدة في شاشة حفظ الرمز لتفعيل صلاحية المالك. بعد النجاح، أزل `OWNER_RECOVERY_TOKEN` من بيئة الخادم. العملية تُحفظ على القرص قبل تأكيد النجاح، وتُقفل بعد مطالبة واحدة، ولا تغيّر الحساب القديم أو بياناته.
+
 ## إصدار نسخة جديدة
 
 1. حدّث رقم الإصدار في `package.json` وسجل التغييرات في `CHANGELOG.md`.
-2. افحص التغييرات وشغّل `npm ci --legacy-peer-deps` و`npm run lint` و`npm run build`.
-3. ادمج النسخة في `main`.
-4. أنشئ وسمًا مطابقًا لإصدار SemVer وادفعه:
+2. تُولّد ملفات Android Launcher وAdaptive Icons وPWA تلقائيًا من `resources/logo.png` في مساري البناء؛ لا تعدّل الصور المولّدة يدويًا.
+3. افحص التغييرات وشغّل `npm ci --legacy-peer-deps` و`npm run lint` و`npm run build`.
+4. ادمج النسخة في `main`.
+5. أنشئ وسمًا مطابقًا لإصدار SemVer وادفعه:
 
    ```sh
    git tag -a v3.9.1 -m "Fadfada 3.9.1"
    git push origin v3.9.1
    ```
 
-5. راقب **Actions → Publish Android Release**. عند النجاح، ينشئ GitHub Release تلقائيًا ويضيف:
+6. راقب **Actions → Publish Android Release**. عند النجاح، ينشئ GitHub Release تلقائيًا ويضيف:
    - `app-release.apk` للتثبيت المباشر على Android.
    - `app-release.aab` لحزمة رفع Google Play.
    - `android-release-checksums.txt` للتحقق من سلامة التنزيل.

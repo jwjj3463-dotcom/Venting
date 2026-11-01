@@ -112,28 +112,28 @@ class FadfadahNetworkClient {
       : { 'Content-Type': 'application/json' };
   }
 
-  async bootstrapSessionAndSync(): Promise<void> {
+  async bootstrapSessionAndSync(): Promise<boolean> {
     await realmDB.open();
     const settings = realmDB.getSettings();
 
     try {
       if (!settings.auth_token) {
-        await this.registerFreshDeviceAccount();
+        this.connectionState = 'offline';
+        this.emitState();
+        return false;
       }
-
-      let synced = await this.pullFullSync();
+      const synced = await this.pullFullSync();
       if (!synced) {
-        await this.registerFreshDeviceAccount();
-        synced = await this.pullFullSync();
-      }
-      if (!synced) {
-        throw new Error('تعذر التحقق من الحساب بعد التسجيل.');
+        this.connectionState = 'offline';
+        this.emitState();
+        return false;
       }
       if (!realmDB.findSelfUser() || !realmDB.findPersonalLink()) {
         throw new Error('اكتملت المزامنة دون بيانات الحساب أو رابطه الشخصي.');
       }
 
       this.connectWebSocket();
+      return true;
     } catch (error) {
       this.connectionState = 'offline';
       this.emitState();
@@ -184,7 +184,7 @@ class FadfadahNetworkClient {
     }
   }
 
-  private async registerFreshDeviceAccount(): Promise<void> {
+  async createFreshDeviceAccount(): Promise<string> {
     const base = this.getServerBaseUrl();
     const res = await this.fetchBootstrap(
       `${base}/api/auth/register`,
@@ -203,6 +203,8 @@ class FadfadahNetworkClient {
       !isRecord(data) ||
       typeof data.authToken !== 'string' ||
       !data.authToken ||
+      typeof data.recoveryCode !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(data.recoveryCode) ||
       !isRecord(data.selfUser) ||
       typeof data.selfUser.id !== 'string' ||
       !isRecord(data.personalLink) ||
@@ -214,6 +216,7 @@ class FadfadahNetworkClient {
 
     const registration = data as {
       authToken: string;
+      recoveryCode: string;
       selfUser: RealmUser;
       personalLink: RealmPersonalLink;
     };
@@ -223,9 +226,102 @@ class FadfadahNetworkClient {
       tx.create('app_settings', {
         ...currentSettings,
         auth_token: registration.authToken,
+        pending_recovery_code: registration.recoveryCode,
       });
       tx.create('users', { ...registration.selfUser, is_self: true });
       tx.create('personal_links', registration.personalLink);
+    });
+    if (!(await this.pullFullSync())) {
+      throw new Error('تعذر مزامنة الحساب الجديد بعد إنشائه.');
+    }
+    this.connectWebSocket();
+    return registration.recoveryCode;
+  }
+
+  async recoverAccount(recoveryCode: string): Promise<string> {
+    const base = this.getServerBaseUrl();
+    const res = await this.fetchBootstrap(
+      `${base}/api/auth/recover`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recoveryCode: recoveryCode.trim().toLowerCase() }),
+      },
+      'تعذر استعادة الحساب'
+    );
+    const data: unknown = await this.readBootstrapResponse<unknown>(
+      res,
+      'تعذر استعادة الحساب'
+    );
+    if (
+      !isRecord(data) ||
+      typeof data.authToken !== 'string' ||
+      !data.authToken ||
+      typeof data.recoveryCode !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(data.recoveryCode) ||
+      !isRecord(data.selfUser) ||
+      typeof data.selfUser.id !== 'string' ||
+      !isRecord(data.personalLink) ||
+      typeof data.personalLink.id !== 'string' ||
+      data.personalLink.user_id !== data.selfUser.id
+    ) {
+      throw new Error('تعذر استعادة الحساب: بيانات الاستجابة غير مكتملة.');
+    }
+
+    const currentSettings = realmDB.getSettings();
+    await realmDB.write((tx) => {
+      tx.create('app_settings', {
+        ...currentSettings,
+        auth_token: data.authToken as string,
+        pending_recovery_code: data.recoveryCode as string,
+      });
+    });
+
+    if (!(await this.pullFullSync())) {
+      throw new Error('تم استرداد بيانات الدخول لكن تعذرت مزامنة الحساب.');
+    }
+    if (!realmDB.findSelfUser() || !realmDB.findPersonalLink()) {
+      throw new Error('اكتملت الاستعادة دون بيانات الحساب أو رابطه الشخصي.');
+    }
+    this.connectWebSocket();
+    return data.recoveryCode;
+  }
+
+  async claimReplacementOwner(recoveryToken: string): Promise<void> {
+    const base = this.getServerBaseUrl();
+    const res = await this.fetchBootstrap(
+      `${base}/api/admin/owner-recovery`,
+      {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({ recoveryToken: recoveryToken.trim() }),
+      },
+      'تعذر تفعيل حساب المالك'
+    );
+    const data: unknown = await this.readBootstrapResponse<unknown>(
+      res,
+      'تعذر تفعيل حساب المالك'
+    );
+    if (
+      !isRecord(data) ||
+      data.ok !== true ||
+      data.role !== 'owner' ||
+      !isRecord(data.selfUser) ||
+      typeof data.selfUser.id !== 'string' ||
+      data.selfUser.id !== realmDB.findSelfUser()?.id
+    ) {
+      throw new Error('تعذر تفعيل حساب المالك: استجابة الخادم غير مكتملة.');
+    }
+
+    if (!(await this.pullFullSync()) || realmDB.findSelfUser()?.role !== 'owner') {
+      throw new Error('تم تفعيل الصلاحية لكن تعذرت مزامنة الحساب.');
+    }
+  }
+
+  async dismissPendingRecoveryCode(): Promise<void> {
+    const settings = realmDB.getSettings();
+    await realmDB.write((tx) => {
+      tx.create('app_settings', { ...settings, pending_recovery_code: '' });
     });
   }
 
@@ -682,8 +778,24 @@ class FadfadahNetworkClient {
         auth_token: '',
       });
     });
+    if (this.reconnectTimer) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.ws) {
+      this.manualClose = true;
+      this.ws.close();
+      this.ws = null;
+    }
+    this.connectionState = 'offline';
+    this.emitState();
     try {
-      await this.bootstrapSessionAndSync();
+      const hasSession = await this.bootstrapSessionAndSync();
+      if (!hasSession) {
+        this.connectionState = 'offline';
+        this.emitState();
+        return false;
+      }
       return this.connectionState !== 'offline';
     } catch {
       return false;

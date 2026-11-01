@@ -1,5 +1,5 @@
 import React from 'react';
-import { BadgeCheck } from 'lucide-react';
+import { BadgeCheck } from './ThreeDIcons';
 import { UserRole } from '../db/realmLocalDB';
 import { AppLang } from '../i18n/translations';
 

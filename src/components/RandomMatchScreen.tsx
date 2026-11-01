@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { RefreshCw, MessageCircle, SkipForward, SlidersHorizontal, Crown, Gift, Play } from 'lucide-react';
+import { MessageCircle, RefreshCw, SkipForward, SlidersHorizontal, Crown, Gift, Play } from './ThreeDIcons';
 import { FramedAvatar } from './FramedAvatar';
 import { RealmUser } from '../db/realmLocalDB';
 import { fadfadahClient, LiveMatchCandidate } from '../services/fadfadahNetworkClient';

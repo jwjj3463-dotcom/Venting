@@ -44,7 +44,10 @@ jobs:
         run: node scripts/configure-android-admob.mjs
 
       - name: Generate branded Android icons
-        run: npx @capacitor/assets generate --android --assetPath resources --iconBackgroundColor '#2D1B69' --iconBackgroundColorDark '#151221' --splashBackgroundColor '#2D1B69' --splashBackgroundColorDark '#151221'
+        run: npx @capacitor/assets generate --android --pwa --assetPath resources --iconBackgroundColor '#2D1B69' --iconBackgroundColorDark '#151221' --splashBackgroundColor '#2D1B69' --splashBackgroundColorDark '#151221' --pwaNoAppleFetch
+
+      - name: Finalize web icon formats and safe maskable icon
+        run: node scripts/finalize-brand-icons.mjs
 
       - name: Sync Android project
         run: npx cap sync android

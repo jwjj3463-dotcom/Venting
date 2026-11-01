@@ -39,6 +39,7 @@ export type PaymentStatus = 'COMPLETED' | 'FAILED' | 'REFUNDED';
 export interface ServerUserRecord {
   id: string;
   auth_token_hash: string;
+  recovery_code_hash?: string;
   nickname: string;
   avatar_url: string;
   frame_id: number;
@@ -221,6 +222,7 @@ export const DEFAULT_AD_SETTINGS: ServerAdSettings = {
 interface PersistedDatabaseShape {
   schemaVersion: number;
   owner_bootstrap_completed?: boolean;
+  owner_recovery_completed?: boolean;
   users: ServerUserRecord[];
   personal_links: ServerPersonalLink[];
   chat_rooms: ServerChatRoom[];
@@ -296,6 +298,7 @@ export class FadfadahServerDB {
   public idempotencyKeys = new Set<string>();
   public adSettings: ServerAdSettings = { ...DEFAULT_AD_SETTINGS };
   public ownerBootstrapCompleted = false;
+  public ownerRecoveryCompleted = false;
 
   private flushPromise: Promise<void> = Promise.resolve();
   private flushScheduled = false;
@@ -346,6 +349,7 @@ export class FadfadahServerDB {
         this.ownerBootstrapCompleted =
           parsed.owner_bootstrap_completed === true ||
           Array.from(this.users.values()).some((user) => user.role === 'owner');
+        this.ownerRecoveryCompleted = parsed.owner_recovery_completed === true;
         if (parsed.ad_settings) {
           this.adSettings = { ...DEFAULT_AD_SETTINGS, ...parsed.ad_settings };
         }
@@ -381,6 +385,7 @@ export class FadfadahServerDB {
       moderation_actions: Array.from(this.moderationActions.values()),
       payment_transactions: Array.from(this.paymentTransactions.values()),
       owner_bootstrap_completed: this.ownerBootstrapCompleted,
+      owner_recovery_completed: this.ownerRecoveryCompleted,
       ad_settings: this.adSettings,
     };
     const tmpFile = `${DB_FILE}.tmp`;
@@ -431,9 +436,15 @@ export class FadfadahServerDB {
     country?: string;
     languages?: string[];
     interests?: string[];
-  }): { user: ServerUserRecord; link: ServerPersonalLink; rawToken: string } {
+  }): {
+    user: ServerUserRecord;
+    link: ServerPersonalLink;
+    rawToken: string;
+    recoveryCode: string;
+  } {
     const id = crypto.randomUUID();
     const rawToken = generateRawToken();
+    const recoveryCode = generateRawToken();
     const tokenHash = hashAuthToken(rawToken);
     const randNum = Math.floor(1000 + Math.random() * 8999);
     const nickname = params?.nickname?.trim().slice(0, 24) || `User_${randNum}`;
@@ -448,6 +459,7 @@ export class FadfadahServerDB {
     const user: ServerUserRecord = {
       id,
       auth_token_hash: tokenHash,
+      recovery_code_hash: hashAuthToken(recoveryCode),
       nickname,
       avatar_url: params?.avatar_url || 'aurora',
       frame_id: 0,
@@ -484,7 +496,39 @@ export class FadfadahServerDB {
     this.slugIndex.set(slug, link.id);
     this.scheduleSave();
 
-    return { user, link, rawToken };
+    return { user, link, rawToken, recoveryCode };
+  }
+
+  recoverAccount(recoveryCode: string): {
+    user: ServerUserRecord;
+    link: ServerPersonalLink;
+    rawToken: string;
+    recoveryCode: string;
+  } | null {
+    const codeHash = hashAuthToken(recoveryCode);
+    const user = Array.from(this.users.values()).find(
+      (candidate) =>
+        candidate.recovery_code_hash &&
+        /^[a-f0-9]{64}$/.test(candidate.recovery_code_hash) &&
+        crypto.timingSafeEqual(
+          Buffer.from(candidate.recovery_code_hash, 'hex'),
+          Buffer.from(codeHash, 'hex')
+        )
+    );
+    if (!user) return null;
+
+    const link = this.getLinkForUser(user.id);
+    if (!link) return null;
+
+    const rawToken = generateRawToken();
+    const nextRecoveryCode = generateRawToken();
+    this.tokenIndex.delete(user.auth_token_hash);
+    user.auth_token_hash = hashAuthToken(rawToken);
+    user.recovery_code_hash = hashAuthToken(nextRecoveryCode);
+    this.tokenIndex.set(user.auth_token_hash, user.id);
+    user.last_seen_at = Date.now();
+    this.scheduleSave();
+    return { user, link, rawToken, recoveryCode: nextRecoveryCode };
   }
 
   claimInitialOwner(userId: string): boolean {
@@ -501,6 +545,27 @@ export class FadfadahServerDB {
     user.role = 'owner';
     this.ownerBootstrapCompleted = true;
     this.scheduleSave();
+    return true;
+  }
+
+  async claimReplacementOwner(userId: string): Promise<boolean> {
+    if (this.ownerRecoveryCompleted) return false;
+    if (!Array.from(this.users.values()).some((user) => user.role === 'owner')) {
+      return false;
+    }
+
+    const user = this.users.get(userId);
+    if (!user || user.role !== 'user') return false;
+
+    user.role = 'owner';
+    this.ownerRecoveryCompleted = true;
+    try {
+      await this.flushNow();
+    } catch (error) {
+      user.role = 'user';
+      this.ownerRecoveryCompleted = false;
+      throw error;
+    }
     return true;
   }
 

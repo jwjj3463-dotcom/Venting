@@ -12,7 +12,7 @@ import {
   Settings,
   ShieldAlert,
   AlertTriangle,
-} from 'lucide-react';
+} from './components/ThreeDIcons';
 import {
   realmDB,
   RealmAppSettings,
@@ -34,6 +34,7 @@ import { ExploreVentScreen } from './components/ExploreVentScreen';
 import { ProfileAndSettingsScreen } from './components/ProfileAndSettingsScreen';
 import { AnonymousWebGatewayModal } from './components/AnonymousWebGatewayModal';
 import { AdInterstitialModal } from './components/AdInterstitialModal';
+import { AccountAccessScreen } from './components/AccountAccessScreen';
 import { adService } from './services/adService';
 import { TRANSLATIONS } from './i18n/translations';
 
@@ -42,6 +43,12 @@ type PrimaryTab = 'chats' | 'match' | 'explore' | 'profile';
 export default function App() {
   const [ready, setReady] = useState(false);
   const [bootError, setBootError] = useState('');
+  const [accountAccessRequired, setAccountAccessRequired] = useState(false);
+  const [accountAccessBusy, setAccountAccessBusy] = useState(false);
+  const [accountAccessError, setAccountAccessError] = useState('');
+  const [recoveryCodeToSave, setRecoveryCodeToSave] = useState('');
+  const [ownerRecoveryToken, setOwnerRecoveryToken] = useState('');
+  const [ownerRecoveryBusy, setOwnerRecoveryBusy] = useState(false);
   const [bootAttempt, setBootAttempt] = useState(0);
   const [tick, setTick] = useState(0);
 
@@ -68,11 +75,19 @@ export default function App() {
 
     const bootstrap = async () => {
       try {
-        await fadfadahClient.bootstrapSessionAndSync();
+        const hasSession = await fadfadahClient.bootstrapSessionAndSync();
         if (cancelled) return;
         unsubRealm = realmDB.addListener(() => setTick((v) => v + 1));
-        unsubNet = fadfadahClient.subscribe(() => setTick((v) => v + 1));
+        unsubNet = fadfadahClient.subscribe(() => {
+          setTick((v) => v + 1);
+          if (!realmDB.getSettings().auth_token) {
+            setAccountAccessRequired(true);
+          }
+        });
+        setAccountAccessRequired(!hasSession);
         setReady(true);
+        const pendingRecoveryCode = realmDB.getSettings().pending_recovery_code;
+        if (pendingRecoveryCode) setRecoveryCodeToSave(pendingRecoveryCode);
 
         const params = new URLSearchParams(window.location.search);
         const sharedSlug = params.get('u');
@@ -81,6 +96,8 @@ export default function App() {
         }
       } catch (err) {
         if (!cancelled) {
+          const pendingRecoveryCode = realmDB.getSettings().pending_recovery_code;
+          if (pendingRecoveryCode) setRecoveryCodeToSave(pendingRecoveryCode);
           setBootError(err instanceof Error ? err.message : 'تعذر تهيئة التطبيق');
         }
       }
@@ -133,7 +150,50 @@ export default function App() {
     ? realmDB.findPersonalLink()
     : undefined;
 
-  if (bootError) {
+  const handleAccountAccess = async (action: () => Promise<string>) => {
+    setAccountAccessBusy(true);
+    setAccountAccessError('');
+    try {
+      const code = await action();
+      setRecoveryCodeToSave(code);
+      setAccountAccessRequired(false);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const pendingRecoveryCode = realmDB.getSettings().pending_recovery_code;
+      if (pendingRecoveryCode) {
+        setRecoveryCodeToSave(pendingRecoveryCode);
+        setAccountAccessRequired(false);
+      }
+      setAccountAccessError(message);
+    } finally {
+      setAccountAccessBusy(false);
+    }
+  };
+
+  const handleRecoveryCodeAcknowledged = async () => {
+    try {
+      await fadfadahClient.dismissPendingRecoveryCode();
+      setRecoveryCodeToSave('');
+    } catch (err) {
+      setAccountAccessError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleReplacementOwnerClaim = async () => {
+    setOwnerRecoveryBusy(true);
+    setAccountAccessError('');
+    try {
+      await fadfadahClient.claimReplacementOwner(ownerRecoveryToken);
+      setOwnerRecoveryToken('');
+      await handleRecoveryCodeAcknowledged();
+    } catch (err) {
+      setAccountAccessError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setOwnerRecoveryBusy(false);
+    }
+  };
+
+  if (bootError && !recoveryCodeToSave) {
     return (
       <div className="h-[100dvh] flex items-center justify-center p-6 bg-[#F8F9FA] dark:bg-[#151221]">
         <div className="max-w-sm w-full rounded-3xl bg-white dark:bg-[#1E1B2E] border border-rose-300 dark:border-rose-800 p-6 text-center space-y-3">
@@ -152,6 +212,81 @@ export default function App() {
           </button>
         </div>
       </div>
+    );
+  }
+
+  if (recoveryCodeToSave) {
+    return (
+      <main className="min-h-[100dvh] flex items-center justify-center p-5 bg-[#2D1B69] text-white">
+        <section className="w-full max-w-md rounded-3xl bg-[#1E1B2E] border border-white/10 p-6 space-y-5 shadow-2xl">
+          <h1 className="text-xl font-bold text-center">احفظ رمز استرداد حسابك</h1>
+          <p className="text-sm text-purple-200 leading-relaxed">
+            هذا الرمز هو الطريقة الوحيدة لاستعادة حسابك بعد حذف التطبيق أو
+            استخدام جهاز جديد. احتفظ به في مكان آمن؛ لن يظهر مرة أخرى.
+          </p>
+          <code
+            dir="ltr"
+            className="block rounded-xl bg-black/40 p-4 text-center text-sm font-mono break-all select-all"
+          >
+            {recoveryCodeToSave}
+          </code>
+          <div className="space-y-2 border-t border-white/10 pt-4">
+            <label htmlFor="owner-recovery-token" className="block text-xs font-semibold">
+              تفعيل حساب المالك (إجراء لمرة واحدة)
+            </label>
+            <p className="text-xs text-purple-200 leading-relaxed">
+              يتطلب رمزًا سريًا عيّنه مشغّل الخادم في إعداداته. لن تُمسح بيانات
+              المالك السابق.
+            </p>
+            <input
+              id="owner-recovery-token"
+              type="password"
+              autoComplete="new-password"
+              dir="ltr"
+              value={ownerRecoveryToken}
+              onChange={(event) => setOwnerRecoveryToken(event.target.value)}
+              placeholder="Server owner recovery token"
+              className="w-full h-11 px-3 rounded-xl bg-black/30 border border-white/15 text-sm font-mono"
+            />
+            <button
+              type="button"
+              disabled={ownerRecoveryBusy || !ownerRecoveryToken.trim()}
+              onClick={() => void handleReplacementOwnerClaim()}
+              className="w-full min-h-[44px] rounded-xl bg-amber-500 disabled:opacity-50 text-slate-950 font-bold text-sm"
+            >
+              {ownerRecoveryBusy ? 'جارٍ التفعيل...' : 'تفعيل صلاحية المالك'}
+            </button>
+          </div>
+          <button
+            type="button"
+            disabled={ownerRecoveryBusy}
+            onClick={() => void handleRecoveryCodeAcknowledged()}
+            className="w-full min-h-[46px] rounded-xl bg-[#8B5CF6] disabled:opacity-50 font-bold text-sm"
+          >
+            حفظت الرمز، متابعة
+          </button>
+          {accountAccessError && (
+            <p role="alert" className="text-xs text-rose-300 text-center">
+              {accountAccessError}
+            </p>
+          )}
+        </section>
+      </main>
+    );
+  }
+
+  if (accountAccessRequired) {
+    return (
+      <AccountAccessScreen
+        busy={accountAccessBusy}
+        error={accountAccessError}
+        onCreateAccount={() =>
+          void handleAccountAccess(() => fadfadahClient.createFreshDeviceAccount())
+        }
+        onRecoverAccount={(code) =>
+          void handleAccountAccess(() => fadfadahClient.recoverAccount(code))
+        }
+      />
     );
   }
 

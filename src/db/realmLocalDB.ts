@@ -155,6 +155,7 @@ export interface RealmAppSettings {
   language: 'ar' | 'en';
   auth_token: string;
   custom_server_url: string;
+  pending_recovery_code?: string;
 }
 
 export type RealmCollectionName =
@@ -305,6 +306,7 @@ export const FADFADAH_REALM_SCHEMAS: RealmObjectSchema[] = [
       language: 'string',
       auth_token: 'string',
       custom_server_url: 'string',
+      pending_recovery_code: 'string?',
     },
   },
 ];

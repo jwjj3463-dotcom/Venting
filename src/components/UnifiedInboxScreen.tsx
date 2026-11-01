@@ -7,7 +7,7 @@ import {
   CheckCircle2,
   XCircle,
   Crown,
-} from 'lucide-react';
+} from './ThreeDIcons';
 import { FramedAvatar } from './FramedAvatar';
 import {
   RealmChatRoom,

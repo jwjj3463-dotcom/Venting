@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Heart, MessageSquarePlus, Send, AlertTriangle } from 'lucide-react';
+import { Heart, MessageSquarePlus, Send, AlertTriangle } from './ThreeDIcons';
 import { FramedAvatar } from './FramedAvatar';
 import {
   RealmPublicVent,
@@ -297,7 +297,11 @@ export const ExploreVentScreen: React.FC<ExploreVentScreenProps> = ({
                           : 'text-slate-500 dark:text-slate-400'
                       }`}
                     >
-                      <Heart className={`w-4 h-4 ${vent.liked_by_me ? 'fill-current' : ''}`} />
+                      <Heart
+                        className={`w-4 h-4 transition-transform ${
+                          vent.liked_by_me ? 'scale-110 saturate-150' : 'grayscale opacity-70'
+                        }`}
+                      />
                       <span className="font-mono-num">{vent.likes_count}</span>
                     </button>
 

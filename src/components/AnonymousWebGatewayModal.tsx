@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ShieldCheck, Lock, Send, X, AlertTriangle } from 'lucide-react';
+import { ShieldCheck, Lock, Send, X, AlertTriangle } from './ThreeDIcons';
 import { AVATAR_PRESETS, FramedAvatar } from './FramedAvatar';
 import { RealmUser } from '../db/realmLocalDB';
 import { fadfadahClient } from '../services/fadfadahNetworkClient';
