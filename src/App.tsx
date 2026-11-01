@@ -34,6 +34,7 @@ import { ExploreVentScreen } from './components/ExploreVentScreen';
 import { ProfileAndSettingsScreen } from './components/ProfileAndSettingsScreen';
 import { AnonymousWebGatewayModal } from './components/AnonymousWebGatewayModal';
 import { AdInterstitialModal } from './components/AdInterstitialModal';
+import { AndroidAppUpdatePrompt } from './components/AndroidAppUpdatePrompt';
 import { AccountAccessScreen } from './components/AccountAccessScreen';
 import { adService } from './services/adService';
 import { TRANSLATIONS } from './i18n/translations';
@@ -750,6 +751,7 @@ export default function App() {
         lang={lang}
         onClose={() => setShowInterstitial(false)}
       />
+      <AndroidAppUpdatePrompt />
     </div>
   );
 }

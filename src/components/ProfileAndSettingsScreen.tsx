@@ -90,6 +90,7 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
   const [savingServerUrl, setSavingServerUrl] = useState(false);
 
   const [saveToast, setSaveToast] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [copiedCmd, setCopiedCmd] = useState(false);
 
@@ -193,25 +194,30 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fadfadahClient.updateProfile({
-      nickname: nickname.trim() || selfUser.nickname,
-      slug: slug.trim() || personalLink.slug,
-      country,
-      bio: bio.trim(),
-      avatar_url: avatarUrl,
-      frame_id: frameId,
-      interests,
-      languages,
-    });
+    setSavingProfile(true);
+    try {
+      const res = await fadfadahClient.updateProfile({
+        nickname: nickname.trim() || selfUser.nickname,
+        slug: slug.trim() || personalLink.slug,
+        country,
+        bio: bio.trim(),
+        avatar_url: avatarUrl,
+        frame_id: frameId,
+        interests,
+        languages,
+      });
 
-    if (!res.ok) {
-      setSaveToast(res.error || (lang === 'ar' ? 'تعذر الحفظ.' : 'Save failed.'));
-      return;
+      if (!res.ok) {
+        setSaveToast(res.error || (lang === 'ar' ? 'تعذر الحفظ.' : 'Save failed.'));
+        return;
+      }
+      const updatedLink = realmDB.findPersonalLink();
+      if (updatedLink) setSlug(updatedLink.slug);
+      setSaveToast(t.savedSuccess);
+      setTimeout(() => setSaveToast(''), 2600);
+    } finally {
+      setSavingProfile(false);
     }
-    const updatedLink = realmDB.findPersonalLink();
-    if (updatedLink) setSlug(updatedLink.slug);
-    setSaveToast(t.savedSuccess);
-    setTimeout(() => setSaveToast(''), 2600);
   };
 
   // Real Server-Verified Checkout (Idempotent & Audited in Server Database)
@@ -910,9 +916,14 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
 
         <button
           type="submit"
-          className="w-full min-h-[48px] rounded-2xl bg-[#8B5CF6] active:scale-[0.99] text-white text-sm font-bold transition-transform"
+          disabled={savingProfile}
+          className="w-full min-h-[48px] rounded-2xl bg-[#8B5CF6] active:scale-[0.99] disabled:opacity-60 text-white text-sm font-bold transition-transform"
         >
-          {t.saveProfile}
+          {savingProfile
+            ? lang === 'ar'
+              ? 'جارٍ حفظ التعديلات...'
+              : 'Saving changes...'
+            : t.saveProfile}
         </button>
 
         {saveToast && (

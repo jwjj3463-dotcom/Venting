@@ -43,6 +43,9 @@ jobs:
       - name: Configure Firebase Authentication
         run: node scripts/configure-android-firebase.mjs
 
+      - name: Configure Android APK updater
+        run: node scripts/configure-android-updater.mjs
+
       - name: Configure AdMob application ID
         env:
           ADMOB_APP_ID: ${{ vars.ADMOB_APP_ID }}

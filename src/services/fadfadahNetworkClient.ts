@@ -906,22 +906,39 @@ class FadfadahNetworkClient {
     interests: string[];
     languages: string[];
   }): Promise<{ ok: boolean; error?: string }> {
-    const res = await fetch(`${this.getServerBaseUrl()}/api/profile`, {
-      method: 'PUT',
-      headers: this.getAuthHeaders(),
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      return { ok: false, error: data.error || 'تعذر حفظ التعديلات.' };
-    }
-    await realmDB.write((tx) => {
-      tx.create('users', { ...data.selfUser, is_self: true });
-      if (data.personalLink) {
-        tx.create('personal_links', data.personalLink);
+    try {
+      const endpoint = 'تعذر حفظ الملف الشخصي';
+      const res = await this.fetchBootstrap(
+        `${this.getServerBaseUrl()}/api/profile`,
+        {
+          method: 'PUT',
+          headers: this.getAuthHeaders(),
+          body: JSON.stringify(payload),
+        },
+        endpoint
+      );
+      const data: unknown = await this.readBootstrapResponse<unknown>(res, endpoint);
+      if (
+        !isRecord(data) ||
+        !isRecord(data.selfUser) ||
+        typeof data.selfUser.id !== 'string' ||
+        !isRecord(data.personalLink) ||
+        typeof data.personalLink.id !== 'string' ||
+        data.personalLink.user_id !== data.selfUser.id
+      ) {
+        return { ok: false, error: 'لم يؤكد الخادم حفظ بيانات الملف الشخصي.' };
       }
-    });
-    return { ok: true };
+      await realmDB.write((tx) => {
+        tx.create('users', { ...(data.selfUser as RealmUser), is_self: true });
+        tx.create('personal_links', data.personalLink as RealmPersonalLink);
+      });
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : 'تعذر الاتصال بالخادم لحفظ الملف الشخصي.',
+      };
+    }
   }
 
   async fetchPublicLinkInfo(slug: string): Promise<{
