@@ -220,6 +220,7 @@ export const DEFAULT_AD_SETTINGS: ServerAdSettings = {
 
 interface PersistedDatabaseShape {
   schemaVersion: number;
+  owner_bootstrap_completed?: boolean;
   users: ServerUserRecord[];
   personal_links: ServerPersonalLink[];
   chat_rooms: ServerChatRoom[];
@@ -294,6 +295,7 @@ export class FadfadahServerDB {
   public paymentTransactions = new Map<string, ServerPaymentTransaction>();
   public idempotencyKeys = new Set<string>();
   public adSettings: ServerAdSettings = { ...DEFAULT_AD_SETTINGS };
+  public ownerBootstrapCompleted = false;
 
   private flushPromise: Promise<void> = Promise.resolve();
   private flushScheduled = false;
@@ -341,27 +343,13 @@ export class FadfadahServerDB {
             this.idempotencyKeys.add(tx.idempotency_key);
           }
         }
+        this.ownerBootstrapCompleted =
+          parsed.owner_bootstrap_completed === true ||
+          Array.from(this.users.values()).some((user) => user.role === 'owner');
         if (parsed.ad_settings) {
           this.adSettings = { ...DEFAULT_AD_SETTINGS, ...parsed.ad_settings };
         }
 
-        // Ensure at least one owner exists if users exist
-        let hasOwner = false;
-        for (const u of this.users.values()) {
-          if (u.role === 'owner') {
-            hasOwner = true;
-            break;
-          }
-        }
-        if (!hasOwner && this.users.size > 0) {
-          const firstUser = Array.from(this.users.values()).sort(
-            (a, b) => a.created_at - b.created_at
-          )[0];
-          if (firstUser) {
-            firstUser.role = 'owner';
-            this.scheduleSave();
-          }
-        }
       } catch (err) {
         console.error('Failed to read existing fadfadah.db.json, starting fresh:', err);
       }
@@ -392,6 +380,7 @@ export class FadfadahServerDB {
       reports_moderation: Array.from(this.reports.values()),
       moderation_actions: Array.from(this.moderationActions.values()),
       payment_transactions: Array.from(this.paymentTransactions.values()),
+      owner_bootstrap_completed: this.ownerBootstrapCompleted,
       ad_settings: this.adSettings,
     };
     const tmpFile = `${DB_FILE}.tmp`;
@@ -442,7 +431,6 @@ export class FadfadahServerDB {
     country?: string;
     languages?: string[];
     interests?: string[];
-    role?: UserRole;
   }): { user: ServerUserRecord; link: ServerPersonalLink; rawToken: string } {
     const id = crypto.randomUUID();
     const rawToken = generateRawToken();
@@ -456,10 +444,6 @@ export class FadfadahServerDB {
     const languages = params?.languages?.length ? params.languages : ['العربية'];
     const now = Date.now();
     const todayStr = new Date().toISOString().slice(0, 10);
-
-    // If this is the very first account on the platform, make them the Owner!
-    const assignedRole: UserRole =
-      params?.role ?? (this.users.size === 0 ? 'owner' : 'user');
 
     const user: ServerUserRecord = {
       id,
@@ -479,7 +463,7 @@ export class FadfadahServerDB {
       daily_random_count: 0,
       last_random_date: todayStr,
       bio: 'مساحة آمنة للفضفضة والدردشة المجهولة.',
-      role: assignedRole,
+      role: 'user',
       status: 'active',
       created_at: now,
       last_seen_at: now,
@@ -501,6 +485,23 @@ export class FadfadahServerDB {
     this.scheduleSave();
 
     return { user, link, rawToken };
+  }
+
+  claimInitialOwner(userId: string): boolean {
+    if (this.ownerBootstrapCompleted) return false;
+    if (Array.from(this.users.values()).some((user) => user.role === 'owner')) {
+      this.ownerBootstrapCompleted = true;
+      this.scheduleSave();
+      return false;
+    }
+
+    const user = this.users.get(userId);
+    if (!user) return false;
+
+    user.role = 'owner';
+    this.ownerBootstrapCompleted = true;
+    this.scheduleSave();
+    return true;
   }
 
   getLinkForUser(userId: string): ServerPersonalLink | undefined {

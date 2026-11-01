@@ -13,7 +13,6 @@ import {
   serverDB,
   type ChatRoomStatus,
   type MediaType,
-  type PremiumPlan,
   type ServerChatRoom,
   type ServerMessage,
   type ServerUserRecord,
@@ -146,6 +145,16 @@ function extractBearerToken(req: Request): string | undefined {
   return header.slice(7).trim();
 }
 
+function secureSecretMatches(provided: string, configured: string): boolean {
+  const providedBuffer = Buffer.from(provided, 'utf8');
+  const configuredBuffer = Buffer.from(configured, 'utf8');
+  return (
+    configuredBuffer.length >= 32 &&
+    providedBuffer.length === configuredBuffer.length &&
+    crypto.timingSafeEqual(providedBuffer, configuredBuffer)
+  );
+}
+
 function formatRoomForUser(room: ServerChatRoom, viewerId: string) {
   return {
     id: room.id,
@@ -159,19 +168,6 @@ function formatRoomForUser(room: ServerChatRoom, viewerId: string) {
     created_at: room.created_at,
   };
 }
-
-// Server Authoritative Catalogue Definitions
-const SUBSCRIPTION_PLANS: Record<string, { plan: PremiumPlan; title: string; priceUsd: number; bonusPoints: number }> = {
-  weekly: { plan: 'weekly', title: 'اشتراك فضفضة المميزة - أسبوعي', priceUsd: 2.99, bonusPoints: 150 },
-  monthly: { plan: 'monthly', title: 'اشتراك فضفضة المميزة - شهري', priceUsd: 7.99, bonusPoints: 500 },
-  quarterly: { plan: 'quarterly', title: 'اشتراك فضفضة المميزة - 3 أشهر', priceUsd: 18.99, bonusPoints: 1500 },
-};
-
-const POINTS_PACKAGES: Record<string, { title: string; points: number; priceUsd: number }> = {
-  pts_150: { title: 'باقة 150 نقطة', points: 150, priceUsd: 0.99 },
-  pts_500: { title: 'باقة 500 نقطة', points: 500, priceUsd: 2.49 },
-  pts_1200: { title: 'باقة 1200 نقطة', points: 1200, priceUsd: 4.99 },
-};
 
 const FRAME_POINTS_COST: Record<number, { cost: number; vipOnly: boolean }> = {
   0: { cost: 0, vipOnly: false },
@@ -455,26 +451,13 @@ async function startServer() {
 
   // 1. Register new real device account
   app.post('/api/auth/register', (req: Request, res: Response) => {
-    const { nickname, avatar_url, country, languages, interests, adminSecretKey } = (req.body || {}) as {
+    const { nickname, avatar_url, country, languages, interests } = (req.body || {}) as {
       nickname?: string;
       avatar_url?: string;
       country?: string;
       languages?: string[];
       interests?: string[];
-      adminSecretKey?: string;
     };
-    const rawKey = (adminSecretKey || '').trim();
-    const cleanKey = rawKey.replace(/[!.,\s]+$/, '').toLowerCase();
-    const configuredKey = (process.env.ADMIN_SECRET_KEY || '').trim();
-    const cleanConfiguredKey = configuredKey.replace(/[!.,\s]+$/, '').toLowerCase();
-
-    const initialRole: UserRole | undefined =
-      (configuredKey && (rawKey === configuredKey || cleanKey === cleanConfiguredKey)) ||
-      rawKey === 'FadfadahAdmin2026!' ||
-      rawKey === 'FadfadahAdmin2026' ||
-      cleanKey === 'fadfadahadmin2026'
-        ? 'owner'
-        : undefined;
 
     const { user, link, rawToken } = serverDB.registerNewUser({
       nickname,
@@ -482,7 +465,6 @@ async function startServer() {
       country,
       languages,
       interests,
-      role: initialRole,
     });
 
     const { auth_token_hash: _hidden, ...safeSelf } = user;
@@ -964,6 +946,10 @@ async function startServer() {
       res.status(403).json({ error: 'FORBIDDEN' });
       return;
     }
+    if (room.status !== 'ACCEPTED') {
+      res.status(409).json({ error: 'ROOM_NOT_ACCEPTED' });
+      return;
+    }
 
     const { id: clientMsgId, content, media_url, media_type } = (req.body || {}) as {
       id?: string;
@@ -1315,10 +1301,9 @@ async function startServer() {
   });
 
   // ============================================================================
-  // 13. SERVER-VERIFIED PAYMENTS & SUBSCRIPTIONS (IDEMPOTENT & AUDITED)
+  // 13. PAYMENTS (disabled until server-side provider verification is configured)
   // ============================================================================
 
-  // Verified Checkout (Google Play In-App Purchase / Secure Web Billing Hook)
   app.post('/api/payments/checkout', (req: Request, res: Response) => {
     const user = serverDB.authenticateToken(extractBearerToken(req));
     if (!user) {
@@ -1327,93 +1312,7 @@ async function startServer() {
     }
     if (!verifyAccountActive(user, res)) return;
 
-    const { type, packageId, orderId, idempotencyKey } = (req.body || {}) as {
-      type?: 'SUBSCRIPTION' | 'POINTS_PACK';
-      packageId?: string;
-      orderId?: string;
-      idempotencyKey?: string;
-    };
-
-    if (!type || !packageId) {
-      res.status(400).json({ error: 'MISSING_PACKAGE_DETAILS' });
-      return;
-    }
-
-    const effectiveIdempotencyKey = idempotencyKey?.trim() || orderId?.trim() || `order-${crypto.randomUUID().slice(0, 10)}`;
-
-    // Anti-replay / duplicate prevention: if this order or idempotency key was already completed, return existing record!
-    if (serverDB.idempotencyKeys.has(effectiveIdempotencyKey)) {
-      const existingTx = Array.from(serverDB.paymentTransactions.values()).find(
-        (t) => t.idempotency_key === effectiveIdempotencyKey
-      );
-      const { auth_token_hash: _hidden, ...safeSelf } = user;
-      res.json({
-        ok: true,
-        transaction: existingTx,
-        alreadyProcessed: true,
-        selfUser: { ...safeSelf, is_self: true, is_online: true },
-      });
-      return;
-    }
-
-    let title = '';
-    let priceUsd = 0;
-    let pointsDelta = 0;
-
-    if (type === 'SUBSCRIPTION') {
-      const planDef = SUBSCRIPTION_PLANS[packageId];
-      if (!planDef) {
-        res.status(400).json({ error: 'INVALID_SUBSCRIPTION_PLAN' });
-        return;
-      }
-      title = planDef.title;
-      priceUsd = planDef.priceUsd;
-      pointsDelta = planDef.bonusPoints;
-
-      user.premium_plan = planDef.plan;
-      user.is_premium = true;
-      user.points += pointsDelta;
-      user.unlocked_frames = [0, 1, 2, 3, 4, 5];
-    } else if (type === 'POINTS_PACK') {
-      const packDef = POINTS_PACKAGES[packageId];
-      if (!packDef) {
-        res.status(400).json({ error: 'INVALID_POINTS_PACKAGE' });
-        return;
-      }
-      title = packDef.title;
-      priceUsd = packDef.priceUsd;
-      pointsDelta = packDef.points;
-
-      user.points += pointsDelta;
-    }
-
-    const now = Date.now();
-    const transaction: ServerPaymentTransaction = {
-      id: `tx-${crypto.randomUUID().slice(0, 8)}`,
-      user_id: user.id,
-      user_nickname: user.nickname,
-      type: type,
-      item_id: packageId,
-      item_title: title,
-      amount_usd: priceUsd,
-      points_delta: pointsDelta,
-      status: 'COMPLETED',
-      order_id: orderId?.trim() || `ORD-${now}-${Math.floor(100 + Math.random() * 899)}`,
-      idempotency_key: effectiveIdempotencyKey,
-      created_at: now,
-    };
-
-    serverDB.paymentTransactions.set(transaction.id, transaction);
-    serverDB.idempotencyKeys.add(effectiveIdempotencyKey);
-    serverDB.scheduleSave();
-    broadcastOnlinePresence();
-
-    const { auth_token_hash: _hidden, ...safeSelf } = user;
-    res.json({
-      ok: true,
-      transaction,
-      selfUser: { ...safeSelf, is_self: true, is_online: true },
-    });
+    res.status(503).json({ error: 'PAYMENT_VERIFICATION_NOT_CONFIGURED' });
   });
 
   // Server-Authoritative Points Spending (Frame Purchase or Quota Unlock)
@@ -1536,33 +1435,35 @@ async function startServer() {
       res.status(401).json({ error: 'UNAUTHORIZED' });
       return;
     }
+    if (!verifyAccountActive(user, res)) return;
 
-    const { passcode } = (req.body || {}) as { passcode?: string };
-    const raw = (passcode || '').trim();
-    const normalized = raw.replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, '').toLowerCase();
-
-    const configured = (process.env.ADMIN_SECRET_KEY || '').trim();
-    const cleanConfigured = configured.replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, '').toLowerCase();
-
-    const isMatch =
-      (cleanConfigured && (raw === configured || normalized === cleanConfigured)) ||
-      raw === 'FadfadahAdmin2026!' ||
-      raw === 'FadfadahAdmin2026' ||
-      normalized === 'fadfadahadmin2026' ||
-      raw.toLowerCase().includes('fadfadahadmin2026');
-
-    if (!isMatch) {
-      res.status(401).json({
-        error: 'INVALID_PASSCODE',
-        message: 'رمز الصلاحيات غير صحيح. يرجى إدخال FadfadahAdmin2026 بشكل دقيق.',
+    if (user.role === 'owner' || user.role === 'moderator') {
+      const { auth_token_hash: _hidden, ...safeSelf } = user;
+      res.json({
+        ok: true,
+        role: user.role,
+        selfUser: { ...safeSelf, is_self: true, is_online: true },
       });
       return;
     }
 
-    // Elevate user to owner if not already staff
-    if (user.role !== 'owner' && user.role !== 'moderator') {
-      user.role = 'owner';
-      serverDB.scheduleSave();
+    const { passcode } = (req.body || {}) as { passcode?: string };
+    const configured = process.env.OWNER_BOOTSTRAP_TOKEN?.trim() || '';
+    if (serverDB.ownerBootstrapCompleted) {
+      res.status(403).json({ error: 'OWNER_ALREADY_CONFIGURED' });
+      return;
+    }
+    if (Buffer.byteLength(configured, 'utf8') < 32) {
+      res.status(503).json({ error: 'OWNER_BOOTSTRAP_NOT_CONFIGURED' });
+      return;
+    }
+    if (!secureSecretMatches((passcode || '').trim(), configured)) {
+      res.status(401).json({ error: 'INVALID_PASSCODE' });
+      return;
+    }
+    if (!serverDB.claimInitialOwner(user.id)) {
+      res.status(403).json({ error: 'OWNER_ALREADY_CONFIGURED' });
+      return;
     }
 
     const { auth_token_hash: _hidden, ...safeSelf } = user;

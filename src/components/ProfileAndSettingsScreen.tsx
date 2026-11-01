@@ -317,7 +317,7 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
     setStaffPasscode('');
     setSaveToast(
       lang === 'ar'
-        ? 'تم التحقق بنجاح وترقية الحساب إلى المالك! جاري فتح لوحة الإدارة والإشراف...'
+        ? 'تم التحقق من الصلاحيات. جاري فتح لوحة الإدارة والإشراف...'
         : 'Staff credentials verified successfully!'
     );
     setTimeout(() => setSaveToast(''), 3000);
