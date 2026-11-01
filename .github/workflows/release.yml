@@ -72,8 +72,8 @@ jobs:
           test -n "$ANDROID_KEYSTORE_PASSWORD" || { echo "Missing ANDROID_KEYSTORE_PASSWORD repository secret." >&2; exit 1; }
           test -n "$ANDROID_KEY_ALIAS" || { echo "Missing ANDROID_KEY_ALIAS repository secret." >&2; exit 1; }
           test -n "$ANDROID_KEY_PASSWORD" || { echo "Missing ANDROID_KEY_PASSWORD repository secret." >&2; exit 1; }
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/fadfadah-upload-key.jks"
-          test -s "$RUNNER_TEMP/fadfadah-upload-key.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/fadfadah-upload-key.p12"
+          test -s "$RUNNER_TEMP/fadfadah-upload-key.p12"
 
       - name: Build signed APK and Google Play bundle
         env:
@@ -84,7 +84,8 @@ jobs:
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease bundleRelease \
-            -Pandroid.injected.signing.store.file="$RUNNER_TEMP/fadfadah-upload-key.jks" \
+            -Pandroid.injected.signing.store.file="$RUNNER_TEMP/fadfadah-upload-key.p12" \
+            -Pandroid.injected.signing.store.type=PKCS12 \
             -Pandroid.injected.signing.store.password="$ANDROID_KEYSTORE_PASSWORD" \
             -Pandroid.injected.signing.key.alias="$ANDROID_KEY_ALIAS" \
             -Pandroid.injected.signing.key.password="$ANDROID_KEY_PASSWORD"
