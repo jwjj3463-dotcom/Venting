@@ -8,6 +8,7 @@ import {
 import { fadfadahClient } from '../services/fadfadahNetworkClient';
 import { AppLang, TRANSLATIONS } from '../i18n/translations';
 import { AdBanner } from './AdBanner';
+import { VerifiedBadge } from './VerifiedBadge';
 
 interface ExploreVentScreenProps {
   selfUser: RealmUser;
@@ -137,6 +138,7 @@ export const ExploreVentScreen: React.FC<ExploreVentScreenProps> = ({
                 <span className="text-xs font-bold text-slate-900 dark:text-white truncate max-w-[90px]">
                   {peer.nickname}
                 </span>
+                <VerifiedBadge role={peer.role} lang={lang} />
                 <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[90px]">
                   {peer.is_premium ? (lang === 'ar' ? 'أولوية مميزة' : 'VIP Priority') : peer.country}
                 </span>
@@ -161,7 +163,13 @@ export const ExploreVentScreen: React.FC<ExploreVentScreenProps> = ({
           rows={3}
           value={newVentText}
           onChange={(e) => setNewVentText(e.target.value)}
-          placeholder={t.postVentPlaceholder}
+          placeholder={
+            selfUser.role === 'owner'
+              ? lang === 'ar'
+                ? 'اكتب تحديثًا أو إعلانًا رسميًا للمستخدمين...'
+                : 'Write an official update or announcement for users...'
+              : t.postVentPlaceholder
+          }
           className="w-full p-3 rounded-2xl bg-slate-50 dark:bg-[#151221] border border-slate-200 dark:border-white/10 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#8B5CF6] resize-none"
         />
 
@@ -262,9 +270,12 @@ export const ExploreVentScreen: React.FC<ExploreVentScreenProps> = ({
                     size="sm"
                   />
                   <div className="min-w-0">
-                    <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                      {author.nickname}
-                    </h4>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                        {author.nickname}
+                      </h4>
+                      <VerifiedBadge role={author.role} lang={lang} />
+                    </div>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
                       {vent.topic} · <span className="font-mono-num">{formatAgo(vent.created_at)}</span>
                     </p>

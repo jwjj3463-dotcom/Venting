@@ -5,6 +5,8 @@
 
 import { realmDB, RealmUser } from '../db/realmLocalDB';
 import { fadfadahClient } from './fadfadahNetworkClient';
+import { Capacitor } from '@capacitor/core';
+import { showAdMobInterstitial } from './nativeAdMob';
 
 export interface AdConfig {
   enabled: boolean;
@@ -30,9 +32,9 @@ export const DEFAULT_AD_CONFIG: AdConfig = {
   enabled: true,
   banner_enabled: true,
   interstitial_enabled: true,
-  rewarded_enabled: true,
+  rewarded_enabled: false,
   test_mode: true,
-  ad_provider: 'adsense',
+  ad_provider: 'admob',
   adsense_publisher_id: '',
   adsense_banner_slot_id: '',
   monetag_zone_id: '',
@@ -106,11 +108,12 @@ class AdService {
   }
 
   shouldShowRewarded(user?: RealmUser | null): boolean {
-    return this.config.enabled && this.config.rewarded_enabled;
+    return false;
   }
 
   canShowInterstitial(user?: RealmUser | null): boolean {
     if (!this.shouldShowAds(user)) return false;
+    if (!Capacitor.isNativePlatform() || this.config.ad_provider !== 'admob') return false;
     if (!this.config.interstitial_enabled) return false;
     const now = Date.now();
     const cooldownMs = (this.config.interstitial_cooldown_seconds || 90) * 1000;
@@ -119,6 +122,22 @@ class AdService {
 
   recordInterstitialShown(): void {
     this.lastInterstitialTime = Date.now();
+  }
+
+  async showInterstitial(): Promise<void> {
+    if (
+      !this.config.enabled ||
+      !this.config.interstitial_enabled ||
+      this.config.ad_provider !== 'admob' ||
+      !this.config.admob_interstitial_id?.trim()
+    ) {
+      return;
+    }
+    if (!Capacitor.isNativePlatform()) return;
+    await showAdMobInterstitial(
+      this.config.admob_interstitial_id,
+      this.config.test_mode
+    );
   }
 
   /**

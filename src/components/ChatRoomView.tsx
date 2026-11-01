@@ -20,6 +20,7 @@ import {
 } from '../db/realmLocalDB';
 import { fadfadahClient } from '../services/fadfadahNetworkClient';
 import { AppLang, TRANSLATIONS } from '../i18n/translations';
+import { VerifiedBadge } from './VerifiedBadge';
 
 interface ChatRoomViewProps {
   room: RealmChatRoom;
@@ -213,7 +214,10 @@ export const ChatRoomView: React.FC<ChatRoomViewProps> = ({
             size="sm"
           />
           <div className="min-w-0">
-            <h2 className="text-sm font-bold truncate">{peerUser.nickname}</h2>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <h2 className="text-sm font-bold truncate">{peerUser.nickname}</h2>
+              <VerifiedBadge role={peerUser.role} lang={lang} />
+            </div>
             <p className="text-[11px] text-purple-200/85 truncate">
               {peerTyping
                 ? t.typingNow

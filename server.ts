@@ -1815,8 +1815,6 @@ async function startServer() {
   // 15. ADVERTISEMENTS & ADMOB REWARD ECOSYSTEM
   // ============================================================================
 
-  const userLastRewardedMap = new Map<string, number>();
-
   // Public/User Ad Config
   app.get('/api/ads/config', (_req: Request, res: Response) => {
     const config = serverDB.getAdSettings();
@@ -1824,9 +1822,9 @@ async function startServer() {
       enabled: config.enabled,
       banner_enabled: config.banner_enabled,
       interstitial_enabled: config.interstitial_enabled,
-      rewarded_enabled: config.rewarded_enabled,
+      rewarded_enabled: false,
       test_mode: config.test_mode,
-      ad_provider: config.ad_provider || 'adsense',
+      ad_provider: config.ad_provider || 'admob',
       adsense_publisher_id: config.adsense_publisher_id || '',
       adsense_banner_slot_id: config.adsense_banner_slot_id || '',
       monetag_zone_id: config.monetag_zone_id || '',
@@ -1841,7 +1839,7 @@ async function startServer() {
     });
   });
 
-  // Watch Rewarded Ad -> Claim Points Reward (Server-Authoritative)
+  // Rewarded ads stay disabled until a server-side AdMob verification callback is implemented.
   app.post('/api/ads/reward', (req: Request, res: Response) => {
     const user = serverDB.authenticateToken(extractBearerToken(req));
     if (!user) {
@@ -1849,53 +1847,9 @@ async function startServer() {
       return;
     }
     if (!verifyAccountActive(user, res)) return;
-
-    const config = serverDB.getAdSettings();
-    if (!config.enabled || !config.rewarded_enabled) {
-      res.status(400).json({ error: 'REWARDED_ADS_DISABLED', message: 'الإعلانات بمكافأة غير مفعّلة حالياً.' });
-      return;
-    }
-
-    // Rate-limiting / anti-abuse cooldown (12 seconds between rewards)
-    const now = Date.now();
-    const lastReward = userLastRewardedMap.get(user.id) || 0;
-    if (now - lastReward < 12000) {
-      res.status(429).json({
-        error: 'COOLDOWN_ACTIVE',
-        message: 'يرجى الانتظار بضع ثوانٍ قبل مشاهدة إعلان آخر.',
-      });
-      return;
-    }
-    userLastRewardedMap.set(user.id, now);
-
-    const pointsDelta = config.reward_points_amount || 25;
-    user.points += pointsDelta;
-
-    const tx: ServerPaymentTransaction = {
-      id: `tx-${crypto.randomUUID().slice(0, 8)}`,
-      user_id: user.id,
-      user_nickname: user.nickname,
-      type: 'POINTS_PACK',
-      item_id: 'REWARDED_AD',
-      item_title: `مكافأة إعلان AdMob (+${pointsDelta} نقطة)`,
-      amount_usd: 0,
-      points_delta: pointsDelta,
-      status: 'COMPLETED',
-      order_id: `AD-REW-${now}-${Math.floor(100 + Math.random() * 899)}`,
-      idempotency_key: `ad-${user.id}-${now}`,
-      created_at: now,
-    };
-
-    serverDB.paymentTransactions.set(tx.id, tx);
-    serverDB.scheduleSave();
-    broadcastOnlinePresence();
-
-    const { auth_token_hash: _hidden, ...safeSelf } = user;
-    res.json({
-      ok: true,
-      pointsAwarded: pointsDelta,
-      transaction: tx,
-      selfUser: { ...safeSelf, is_self: true, is_online: true },
+    res.status(503).json({
+      error: 'REWARDED_ADS_NOT_CONFIGURED',
+      message: 'لن تُمنح نقاط مقابل إعلان قبل تفعيل التحقق الآمن من AdMob.',
     });
   });
 

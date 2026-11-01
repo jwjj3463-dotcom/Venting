@@ -4,6 +4,7 @@ import { AVATAR_PRESETS, FramedAvatar } from './FramedAvatar';
 import { RealmUser } from '../db/realmLocalDB';
 import { fadfadahClient } from '../services/fadfadahNetworkClient';
 import { AppLang, TRANSLATIONS } from '../i18n/translations';
+import { VerifiedBadge } from './VerifiedBadge';
 
 interface AnonymousWebGatewayModalProps {
   isOpen: boolean;
@@ -138,9 +139,12 @@ export const AnonymousWebGatewayModal: React.FC<AnonymousWebGatewayModalProps> =
               />
               <div className="min-w-0">
                 <p className="text-xs text-slate-500 dark:text-slate-400">{t.gatewaySendTo}</p>
-                <p className="text-lg font-bold text-slate-900 dark:text-white truncate">
-                  {targetUser.nickname}
-                </p>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <p className="text-lg font-bold text-slate-900 dark:text-white truncate">
+                    {targetUser.nickname}
+                  </p>
+                  <VerifiedBadge role={targetUser.role} lang={lang} />
+                </div>
                 <p className="text-xs text-[#8B5CF6] font-mono-num truncate" dir="ltr">
                   /u/{targetSlug}
                 </p>

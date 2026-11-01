@@ -202,9 +202,9 @@ export const DEFAULT_AD_SETTINGS: ServerAdSettings = {
   enabled: true,
   banner_enabled: true,
   interstitial_enabled: true,
-  rewarded_enabled: true,
+  rewarded_enabled: false,
   test_mode: true,
-  ad_provider: 'adsense',
+  ad_provider: 'admob',
   adsense_publisher_id: '',
   adsense_banner_slot_id: '',
   monetag_zone_id: '',
@@ -581,7 +581,7 @@ export class FadfadahServerDB {
   }
 
   updateAdSettings(partial: Partial<ServerAdSettings>): ServerAdSettings {
-    this.adSettings = { ...this.adSettings, ...partial };
+    this.adSettings = { ...this.adSettings, ...partial, rewarded_enabled: false };
     this.scheduleSave();
     return { ...this.adSettings };
   }

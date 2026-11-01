@@ -37,7 +37,6 @@ import { FramedAvatar } from './FramedAvatar';
 import { AppLang, TRANSLATIONS } from '../i18n/translations';
 import { adService, AdConfig, DEFAULT_AD_CONFIG } from '../services/adService';
 import { AdBanner } from './AdBanner';
-import { AdRewardedModal } from './AdRewardedModal';
 import { AdInterstitialModal } from './AdInterstitialModal';
 
 interface AdminModerationDashboardProps {
@@ -83,7 +82,6 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
   // Ads & AdMob Management
   const [adConfig, setAdConfig] = useState<AdConfig>(() => adService.getConfig());
   const [savingAds, setSavingAds] = useState(false);
-  const [testRewardedOpen, setTestRewardedOpen] = useState(false);
   const [testInterstitialOpen, setTestInterstitialOpen] = useState(false);
 
   const loadCurrentData = async () => {
@@ -824,17 +822,9 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
               <p className="text-xs text-purple-200/80">
                 {lang === 'ar'
                   ? 'يمكنك تجربة ظهور الإعلانات بنفس الشكل الذي يراه المستخدم العادي قبل نشر التطبيق في المتجر:'
-                  : 'Test ad behavior and server reward callbacks exactly as seen by real users:'}
+                  : 'Preview banners and test interstitial ads before release:'}
               </p>
               <div className="flex flex-wrap items-center gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setTestRewardedOpen(true)}
-                  className="min-h-[42px] px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 shadow-md active:scale-95 transition-transform"
-                >
-                  <Play className="w-3.5 h-3.5 fill-current" />
-                  <span>{lang === 'ar' ? 'تجربة إعلان المكافأة (Rewarded)' : 'Test Rewarded Ad'}</span>
-                </button>
                 <button
                   type="button"
                   onClick={() => setTestInterstitialOpen(true)}
@@ -1066,16 +1056,16 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
                 <label className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 dark:bg-[#151221] border border-slate-200 dark:border-white/10 cursor-pointer">
                   <div className="space-y-0.5">
                     <span className="text-xs font-bold text-slate-900 dark:text-white block">
-                      {lang === 'ar' ? 'إعلانات الفيديو بمكافأة (Rewarded)' : 'Rewarded Video Ads'}
+                      {lang === 'ar' ? 'إعلانات الفيديو بمكافأة (متوقفة)' : 'Rewarded Video Ads (disabled)'}
                     </span>
                     <span className="text-[11px] text-slate-500">
-                      {lang === 'ar' ? 'يشاهد المستخدم إعلاناً ويكسب نقاطاً' : 'Users watch video to earn points'}
+                      {lang === 'ar' ? 'تتطلب التحقق الآمن من AdMob قبل منح النقاط' : 'Requires secure AdMob verification before points can be awarded'}
                     </span>
                   </div>
                   <input
                     type="checkbox"
-                    checked={adConfig.rewarded_enabled}
-                    onChange={(e) => setAdConfig({ ...adConfig, rewarded_enabled: e.target.checked })}
+                    checked={false}
+                    disabled
                     className="w-5 h-5 accent-[#8B5CF6] rounded"
                   />
                 </label>
@@ -1101,25 +1091,17 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
               {/* Google AdMob Unit IDs (for Android Native APK Packaging) */}
               <h4 className="text-sm font-bold text-slate-900 dark:text-white pt-2 pb-2 border-b border-slate-100 dark:border-white/10 flex items-center gap-2">
                 <Layers className="w-4 h-4 text-purple-400" />
-                <span>{lang === 'ar' ? 'معرفات Google AdMob (لتطبيق الأندرويد APK)' : 'Google AdMob (Android APK)'}</span>
+                <span>{lang === 'ar' ? 'وحدات إعلانات Google AdMob' : 'Google AdMob Ad Units'}</span>
               </h4>
 
-              <div className="space-y-3.5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  <div className="space-y-1">
-                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                      AdMob App ID (معرّف تطبيق AdMob)
-                    </label>
-                    <input
-                      type="text"
-                      value={adConfig.admob_app_id}
-                      onChange={(e) => setAdConfig({ ...adConfig, admob_app_id: e.target.value })}
-                      placeholder="ca-app-pub-xxxxxxxxxxxxxxxx~yyyyyyyyyy"
-                      dir="ltr"
-                      className="w-full h-11 px-3.5 rounded-xl bg-slate-50 dark:bg-[#151221] border border-slate-200 dark:border-white/10 text-xs font-mono-num text-slate-900 dark:text-white"
-                    />
-                  </div>
+              <p className="text-[11px] text-slate-500">
+                {lang === 'ar'
+                  ? 'معرّف تطبيق AdMob يُضبط في GitHub Actions عبر المتغير ADMOB_APP_ID، ثم يلزم إعادة بناء APK. أدخل هنا معرّفات وحدات الإعلانات فقط.'
+                  : 'Set the AdMob App ID in GitHub Actions as ADMOB_APP_ID and rebuild the APK. Enter ad unit IDs here.'}
+              </p>
 
+              <div className="space-y-3.5">
+                <div className="grid grid-cols-1 gap-3.5">
                   <div className="space-y-1">
                     <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
                       Banner Ad Unit ID (معرّف الوحدة الشريطية)
@@ -1135,21 +1117,7 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  <div className="space-y-1">
-                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                      Rewarded Video Unit ID (معرّف فيديو المكافأة)
-                    </label>
-                    <input
-                      type="text"
-                      value={adConfig.admob_rewarded_id}
-                      onChange={(e) => setAdConfig({ ...adConfig, admob_rewarded_id: e.target.value })}
-                      placeholder="ca-app-pub-xxxxxxxxxxxxxxxx/5224354917"
-                      dir="ltr"
-                      className="w-full h-11 px-3.5 rounded-xl bg-slate-50 dark:bg-[#151221] border border-slate-200 dark:border-white/10 text-xs font-mono-num text-slate-900 dark:text-white"
-                    />
-                  </div>
-
+                <div className="grid grid-cols-1 gap-3.5">
                   <div className="space-y-1">
                     <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
                       Interstitial Unit ID (معرّف الإعلان البيني)
@@ -1165,23 +1133,7 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-                  <div className="space-y-1">
-                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                      {lang === 'ar' ? 'مكافأة النقاط لكل إعلان فيديو' : 'Reward Points Per Ad'}
-                    </label>
-                    <input
-                      type="number"
-                      min={5}
-                      max={500}
-                      value={adConfig.reward_points_amount}
-                      onChange={(e) =>
-                        setAdConfig({ ...adConfig, reward_points_amount: Number(e.target.value) || 25 })
-                      }
-                      className="w-full h-11 px-3.5 rounded-xl bg-slate-50 dark:bg-[#151221] border border-slate-200 dark:border-white/10 text-xs font-mono-num text-slate-900 dark:text-white"
-                    />
-                  </div>
-
+                <div className="grid grid-cols-1 gap-4 pt-1">
                   <div className="space-y-1">
                     <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
                       {lang === 'ar' ? 'فاصل الإعلانات البينية (بالثواني)' : 'Interstitial Cooldown (sec)'}
@@ -1224,19 +1176,6 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
       </div>
 
       {/* Test Modals */}
-      <AdRewardedModal
-        isOpen={testRewardedOpen}
-        lang={lang}
-        onClose={() => setTestRewardedOpen(false)}
-        onRewardClaimed={(pts) => {
-          setActionNotice(
-            lang === 'ar'
-              ? `نجحت تجربة إعلان المكافأة! أُضيفت +${pts} نقطة إلى رصيدك وتوثقت المعاملة.`
-              : `Rewarded ad test successful! +${pts} points credited.`
-          );
-        }}
-      />
-
       <AdInterstitialModal
         isOpen={testInterstitialOpen}
         lang={lang}

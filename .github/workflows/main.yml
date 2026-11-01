@@ -42,6 +42,14 @@ jobs:
       - name: Create Android project
         run: npx cap add android
 
+      - name: Configure AdMob application ID
+        env:
+          ADMOB_APP_ID: ${{ vars.ADMOB_APP_ID }}
+        run: node scripts/configure-android-admob.mjs
+
+      - name: Generate branded Android icons
+        run: npx @capacitor/assets generate --android --assetPath resources --iconBackgroundColor '#2D1B69' --iconBackgroundColorDark '#151221' --splashBackgroundColor '#2D1B69' --splashBackgroundColorDark '#151221'
+
       - name: Sync Android project
         run: npx cap sync android
 

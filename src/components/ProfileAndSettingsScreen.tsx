@@ -41,7 +41,7 @@ import {
 import { fadfadahClient } from '../services/fadfadahNetworkClient';
 import { nativeCopyText } from '../services/androidNative';
 import { AdminModerationDashboard } from './AdminModerationDashboard';
-import { AdRewardedModal } from './AdRewardedModal';
+import { VerifiedBadge } from './VerifiedBadge';
 import { adService } from '../services/adService';
 import {
   AppLang,
@@ -97,7 +97,6 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
   const [staffError, setStaffError] = useState('');
   const [verifyingStaff, setVerifyingStaff] = useState(false);
   const [showPasscodeText, setShowPasscodeText] = useState(false);
-  const [showRewardedModal, setShowRewardedModal] = useState(false);
 
   // Payment transactions
   const [transactions, setTransactions] = useState<RealmPaymentTransaction[]>(() =>
@@ -398,36 +397,6 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
           </div>
         </div>
 
-        {/* Free Points via AdMob Rewarded Video Ads */}
-        <div className="rounded-3xl bg-gradient-to-r from-purple-900/40 via-indigo-900/40 to-slate-900/40 border border-purple-500/30 p-5 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-2xl bg-[#8B5CF6]/20 text-[#A78BFA] flex items-center justify-center">
-                <Gift className="w-5 h-5 text-amber-300" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-white">
-                  {lang === 'ar' ? 'كسب نقاط فضفضة مجاناً' : 'Earn Free Fadfadah Points'}
-                </h3>
-                <p className="text-[11px] text-purple-200/80">
-                  {lang === 'ar'
-                    ? `شاهد إعلان فيديو قصير (15 ثانية) واحصل فوراً على +${adService.getConfig().reward_points_amount || 25} نقطة مجاناً!`
-                    : `Watch a short 15s video ad to instantly receive +${adService.getConfig().reward_points_amount || 25} free points!`}
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowRewardedModal(true)}
-              className="min-h-[44px] px-4 py-2 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-bold flex items-center gap-1.5 shadow-md active:scale-95 transition-transform shrink-0 whitespace-nowrap"
-            >
-              <Play className="w-3.5 h-3.5 fill-current" />
-              <span>{lang === 'ar' ? 'مشاهدة إعلان' : 'Watch Ad'}</span>
-            </button>
-          </div>
-        </div>
-
         {/* Verified Points Packs */}
         <div className="rounded-3xl bg-white dark:bg-[#1E1B2E] border border-slate-200 dark:border-white/10 p-6 space-y-4">
           <div className="flex items-center gap-2">
@@ -499,19 +468,6 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
           </div>
         )}
 
-        <AdRewardedModal
-          isOpen={showRewardedModal}
-          lang={lang}
-          onClose={() => setShowRewardedModal(false)}
-          onRewardClaimed={(pts) => {
-            setSaveToast(
-              lang === 'ar'
-                ? `تهانينا! تمت إضافة +${pts} نقطة بنجاح إلى رصيدك 🎉`
-                : `Earned +${pts} free points!`
-            );
-            setTimeout(() => setSaveToast(''), 4000);
-          }}
-        />
       </div>
     );
   }
@@ -725,6 +681,7 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
         <div>
           <div className="flex items-center justify-center gap-2">
             <h2 className="text-lg font-bold text-slate-900 dark:text-white">{selfUser.nickname}</h2>
+            <VerifiedBadge role={selfUser.role} lang={lang} />
             {isStaff && (
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#8B5CF6] text-white">
                 {selfUser.role === 'owner' ? t.roleOwner : t.roleModerator}
@@ -737,16 +694,6 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
             {lang === 'ar' ? 'نقطة' : 'pts'}
           </p>
 
-          <div className="flex items-center justify-center gap-2 mt-2">
-            <button
-              type="button"
-              onClick={() => setShowRewardedModal(true)}
-              className="px-3 py-1 rounded-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-300 border border-amber-500/30 text-[11px] font-bold flex items-center gap-1.5 transition-colors"
-            >
-              <Gift className="w-3.5 h-3.5 text-amber-500 fill-amber-500/20" />
-              <span>{lang === 'ar' ? 'كسب نقاط مجاناً (+25)' : 'Free Points (+25)'}</span>
-            </button>
-          </div>
         </div>
       </div>
 
@@ -1203,19 +1150,6 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
         </div>
       )}
 
-      <AdRewardedModal
-        isOpen={showRewardedModal}
-        lang={lang}
-        onClose={() => setShowRewardedModal(false)}
-        onRewardClaimed={(pts) => {
-          setSaveToast(
-            lang === 'ar'
-              ? `تهانينا! تمت إضافة +${pts} نقطة بنجاح إلى رصيدك 🎉`
-              : `Earned +${pts} free points!`
-          );
-          setTimeout(() => setSaveToast(''), 4000);
-        }}
-      />
     </div>
   );
 };

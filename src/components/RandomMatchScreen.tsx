@@ -4,7 +4,7 @@ import { FramedAvatar } from './FramedAvatar';
 import { RealmUser } from '../db/realmLocalDB';
 import { fadfadahClient, LiveMatchCandidate } from '../services/fadfadahNetworkClient';
 import { AdBanner } from './AdBanner';
-import { AdRewardedModal } from './AdRewardedModal';
+import { VerifiedBadge } from './VerifiedBadge';
 import {
   AppLang,
   AVAILABLE_COUNTRIES,
@@ -38,7 +38,6 @@ export const RandomMatchScreen: React.FC<RandomMatchScreenProps> = ({
   const [requesting, setRequesting] = useState<boolean>(false);
   const [feedbackBanner, setFeedbackBanner] = useState<string>('');
   const [quotaError, setQuotaError] = useState<string>('');
-  const [showRewardedModal, setShowRewardedModal] = useState<boolean>(false);
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const usedToday = selfUser.last_random_date === todayStr ? selfUser.daily_random_count : 0;
@@ -220,14 +219,6 @@ export const RandomMatchScreen: React.FC<RandomMatchScreenProps> = ({
                 {lang === 'ar' ? 'فتح 3 مطابقات (50 نقطة)' : 'Unlock +3 Matches (50 pts)'}
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => setShowRewardedModal(true)}
-              className="min-h-[44px] px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shadow-sm active:scale-95 transition-transform"
-            >
-              <Gift className="w-4 h-4 fill-current" />
-              <span>{lang === 'ar' ? 'مشاهدة إعلان (+25 نقطة مجاناً)' : 'Watch Ad (+25 free pts)'}</span>
-            </button>
           </div>
         </div>
       )}
@@ -243,9 +234,12 @@ export const RandomMatchScreen: React.FC<RandomMatchScreenProps> = ({
               size="lg"
             />
             <div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                {currentMatch.peer.nickname}
-              </h3>
+              <div className="flex items-center justify-center gap-1.5">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                  {currentMatch.peer.nickname}
+                </h3>
+                <VerifiedBadge role={currentMatch.peer.role} lang={lang} />
+              </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 {currentMatch.peer.languages.join(' · ')}
                 {' · '}
@@ -326,19 +320,6 @@ export const RandomMatchScreen: React.FC<RandomMatchScreenProps> = ({
       {/* AdMob Banner Unit */}
       <AdBanner selfUser={selfUser} lang={lang} position="inline" onOpenUpgrade={onNavigateUpgrade} />
 
-      {/* Rewarded Video Ad Modal */}
-      <AdRewardedModal
-        isOpen={showRewardedModal}
-        lang={lang}
-        onClose={() => setShowRewardedModal(false)}
-        onRewardClaimed={(pts) => {
-          setFeedbackBanner(
-            lang === 'ar'
-              ? `تهانينا! حصلت على +${pts} نقطة رصيد مجانية بنجاح 🎉`
-              : `Earned +${pts} free points!`
-          );
-        }}
-      />
     </div>
   );
 };
