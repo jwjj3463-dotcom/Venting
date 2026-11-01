@@ -40,6 +40,9 @@ jobs:
       - name: Create Android project
         run: npx cap add android
 
+      - name: Configure Firebase Authentication
+        run: node scripts/configure-android-firebase.mjs
+
       - name: Configure AdMob application ID
         env:
           ADMOB_APP_ID: ${{ vars.ADMOB_APP_ID }}

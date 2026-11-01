@@ -55,6 +55,7 @@ interface ProfileAndSettingsScreenProps {
   selfUser: RealmUser;
   personalLink: RealmPersonalLink;
   settings: RealmAppSettings;
+  onLinkAccount: () => void;
   onToggleTheme: () => void;
   onToggleLanguage: () => void;
   initialSubSection?: 'main' | 'monetization' | 'realm_android' | 'admin_portal';
@@ -64,6 +65,7 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
   selfUser,
   personalLink,
   settings,
+  onLinkAccount,
   onToggleTheme,
   onToggleLanguage,
   initialSubSection = 'main',
@@ -950,6 +952,18 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
           <span className="text-xs font-bold text-[#8B5CF6]">
             {settings.language === 'ar' ? 'العربية (RTL)' : 'English (LTR)'}
           </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onLinkAccount}
+          className="w-full px-5 min-h-[58px] flex items-center justify-between gap-4 active:bg-slate-50 dark:active:bg-white/5"
+        >
+          <span className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-[#8B5CF6]" />
+            <span>{lang === 'ar' ? 'ربط بريد أو Google لحماية الحساب' : 'Link email or Google to your account'}</span>
+          </span>
+          <DisclosureChevron className="w-4 h-4 text-slate-400" />
         </button>
 
         <button

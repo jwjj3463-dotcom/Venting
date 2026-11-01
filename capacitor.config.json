@@ -12,6 +12,10 @@
     "backgroundColor": "#151221"
   },
   "plugins": {
+    "FirebaseAuthentication": {
+      "authDomain": "fadfada-3c5e8.firebaseapp.com",
+      "providers": ["google.com"]
+    },
     "SplashScreen": {
       "launchShowDuration": 1200,
       "backgroundColor": "#2D1B69",

@@ -44,6 +44,7 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [bootError, setBootError] = useState('');
   const [accountAccessRequired, setAccountAccessRequired] = useState(false);
+  const [firebaseLinkRequired, setFirebaseLinkRequired] = useState(false);
   const [accountAccessBusy, setAccountAccessBusy] = useState(false);
   const [accountAccessError, setAccountAccessError] = useState('');
   const [recoveryCodeToSave, setRecoveryCodeToSave] = useState('');
@@ -170,6 +171,45 @@ export default function App() {
     }
   };
 
+  const handleFirebaseAction = async (action: () => Promise<string | void>) => {
+    setAccountAccessBusy(true);
+    setAccountAccessError('');
+    try {
+      const recoveryCode = await action();
+      if (recoveryCode) {
+        setRecoveryCodeToSave(recoveryCode);
+      } else {
+        setAccountAccessRequired(false);
+      }
+    } catch (err) {
+      setAccountAccessError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAccountAccessBusy(false);
+    }
+  };
+
+  const handleGoogleAccountAccess = async (idToken: string): Promise<string | void> => {
+    try {
+      await fadfadahClient.loginWithFirebase(idToken);
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes('HTTP 404')) throw error;
+      return fadfadahClient.registerWithFirebase(idToken);
+    }
+  };
+
+  const handleFirebaseLink = async (idToken: string) => {
+    setAccountAccessBusy(true);
+    setAccountAccessError('');
+    try {
+      await fadfadahClient.linkFirebaseIdentity(idToken);
+      setFirebaseLinkRequired(false);
+    } catch (error) {
+      setAccountAccessError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAccountAccessBusy(false);
+    }
+  };
+
   const handleRecoveryCodeAcknowledged = async () => {
     try {
       await fadfadahClient.dismissPendingRecoveryCode();
@@ -280,12 +320,38 @@ export default function App() {
       <AccountAccessScreen
         busy={accountAccessBusy}
         error={accountAccessError}
+        onFirebaseLogin={(idToken) =>
+          void handleFirebaseAction(() => fadfadahClient.loginWithFirebase(idToken))
+        }
+        onFirebaseRegister={(idToken) =>
+          void handleFirebaseAction(() => fadfadahClient.registerWithFirebase(idToken))
+        }
+        onGoogleAuth={(idToken) =>
+          void handleFirebaseAction(() => handleGoogleAccountAccess(idToken))
+        }
         onCreateAccount={() =>
           void handleAccountAccess(() => fadfadahClient.createFreshDeviceAccount())
         }
         onRecoverAccount={(code) =>
           void handleAccountAccess(() => fadfadahClient.recoverAccount(code))
         }
+      />
+    );
+  }
+
+  if (firebaseLinkRequired) {
+    return (
+      <AccountAccessScreen
+        busy={accountAccessBusy}
+        error={accountAccessError}
+        purpose="link"
+        onFirebaseLogin={() => {}}
+        onFirebaseRegister={() => {}}
+        onGoogleAuth={() => {}}
+        onLinkFirebase={handleFirebaseLink}
+        onCancelLink={() => setFirebaseLinkRequired(false)}
+        onCreateAccount={() => {}}
+        onRecoverAccount={() => {}}
       />
     );
   }
@@ -564,6 +630,10 @@ export default function App() {
               selfUser={selfUser}
               personalLink={personalLink}
               settings={settings}
+              onLinkAccount={() => {
+                setAccountAccessError('');
+                setFirebaseLinkRequired(true);
+              }}
               onToggleTheme={handleToggleTheme}
               onToggleLanguage={handleToggleLanguage}
               initialSubSection={profileSubSection}

@@ -287,6 +287,100 @@ class FadfadahNetworkClient {
     return data.recoveryCode;
   }
 
+  async loginWithFirebase(idToken: string): Promise<void> {
+    const res = await this.fetchBootstrap(
+      `${this.getServerBaseUrl()}/api/auth/firebase/session`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      },
+      'تعذر تسجيل الدخول بحساب Firebase'
+    );
+    const response: unknown = await this.readBootstrapResponse<unknown>(
+      res,
+      'تعذر تسجيل الدخول بحساب Firebase'
+    );
+    await this.acceptFirebaseSession(response, false);
+  }
+
+  async registerWithFirebase(idToken: string): Promise<string> {
+    const res = await this.fetchBootstrap(
+      `${this.getServerBaseUrl()}/api/auth/firebase/register`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      },
+      'تعذر إنشاء حساب فضفضة'
+    );
+    const response: unknown = await this.readBootstrapResponse<unknown>(
+      res,
+      'تعذر إنشاء حساب فضفضة'
+    );
+    return this.acceptFirebaseSession(response, true);
+  }
+
+  async linkFirebaseIdentity(idToken: string): Promise<void> {
+    const res = await this.fetchBootstrap(
+      `${this.getServerBaseUrl()}/api/auth/firebase/link`,
+      {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({ idToken }),
+      },
+      'تعذر ربط الحساب'
+    );
+    const response: unknown = await this.readBootstrapResponse<unknown>(res, 'تعذر ربط الحساب');
+    if (!isRecord(response) || response.ok !== true) {
+      throw new Error('تعذر ربط الحساب: استجابة الخادم غير مكتملة.');
+    }
+  }
+
+  private async acceptFirebaseSession(
+    response: unknown,
+    requireRecoveryCode: boolean
+  ): Promise<string> {
+    if (
+      !isRecord(response) ||
+      typeof response.authToken !== 'string' ||
+      !response.authToken ||
+      !isRecord(response.selfUser) ||
+      typeof response.selfUser.id !== 'string' ||
+      !isRecord(response.personalLink) ||
+      typeof response.personalLink.id !== 'string' ||
+      response.personalLink.user_id !== response.selfUser.id ||
+      (response.recoveryCode !== undefined &&
+        (typeof response.recoveryCode !== 'string' ||
+          !/^[a-f0-9]{64}$/.test(response.recoveryCode))) ||
+      (requireRecoveryCode &&
+        (typeof response.recoveryCode !== 'string' ||
+          !/^[a-f0-9]{64}$/.test(response.recoveryCode)))
+    ) {
+      throw new Error('تعذر تسجيل الدخول: بيانات استجابة الحساب غير مكتملة.');
+    }
+
+    const recoveryCode =
+      typeof response.recoveryCode === 'string' ? response.recoveryCode : '';
+    const currentSettings = realmDB.getSettings();
+    await realmDB.write((tx) => {
+      tx.create('app_settings', {
+        ...currentSettings,
+        auth_token: response.authToken as string,
+        ...(recoveryCode ? { pending_recovery_code: recoveryCode } : {}),
+      });
+    });
+
+    if (!(await this.pullFullSync())) {
+      throw new Error('تم تسجيل الدخول لكن تعذرت مزامنة بيانات الحساب.');
+    }
+    if (!realmDB.findSelfUser() || !realmDB.findPersonalLink()) {
+      throw new Error('اكتملت المزامنة دون بيانات الحساب أو رابطه الشخصي.');
+    }
+    this.connectWebSocket();
+    return recoveryCode;
+  }
+
   async claimReplacementOwner(recoveryToken: string): Promise<void> {
     const base = this.getServerBaseUrl();
     const res = await this.fetchBootstrap(
