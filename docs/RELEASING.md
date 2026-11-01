@@ -1,0 +1,70 @@
+# دليل الإصدارات | Release guide
+
+يستطيع مالك التطبيق نشر APK على GitHub دون انتظار موافقة Google Play. مراجعة AdMob إجراء منفصل، وقد تؤثر في عرض الإعلانات لا في رفع APK إلى صفحة GitHub Releases.
+
+## قبل أول إصدار
+
+### 1. أنشئ مفتاح توقيع ثابتًا
+
+أنشئ مفتاحًا خاصًا على جهاز موثوق، وليس داخل GitHub Actions أو داخل المستودع:
+
+```sh
+keytool -genkeypair -v \
+  -keystore fadfadah-upload-key.jks \
+  -alias fadfadah-upload \
+  -keyalg RSA -keysize 2048 -validity 10000
+```
+
+احتفظ بملف `.jks` وكلمات المرور في مكان خاص وآمن، وأنشئ نسخة احتياطية مشفرة. المفتاح نفسه مطلوب لكل تحديث؛ فقدان المفتاح أو تغييره قد يمنع Android من تثبيت التحديث فوق النسخة السابقة. لا ترسله في المحادثات ولا ترفعه إلى GitHub.
+
+### 2. خزّن بيانات المفتاح كأسرار GitHub
+
+حوّل ملف المفتاح إلى نص Base64 محليًا. على Linux:
+
+```sh
+base64 -w 0 fadfadah-upload-key.jks
+```
+
+على macOS:
+
+```sh
+base64 fadfadah-upload-key.jks | tr -d '\n'
+```
+
+في المستودع افتح **Settings → Secrets and variables → Actions → New repository secret**، وأضف القيم التالية:
+
+| اسم السر | القيمة |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | ناتج Base64 الكامل لملف `.jks` |
+| `ANDROID_KEYSTORE_PASSWORD` | كلمة مرور ملف المفتاح |
+| `ANDROID_KEY_ALIAS` | الاسم الذي اخترته لـ `-alias` |
+| `ANDROID_KEY_PASSWORD` | كلمة مرور المفتاح |
+
+لا تضع هذه القيم في `package.json` أو ملفات workflow أو Issues أو Pull Requests.
+
+### 3. جهّز AdMob عند الرغبة في تشغيل الإعلانات
+
+أضف `ADMOB_APP_ID` إلى **Settings → Secrets and variables → Actions → Variables** بعد صدوره من AdMob. الإعلانات على الخادم متوقفة حاليًا؛ لا تفعّلها ولا تستخدم معرّفات الاختبار للإنتاج قبل إكمال مراجعة AdMob وإعداد وحدات الإعلان وسياسة الخصوصية. مكافآت النقاط تظل متوقفة حتى وجود تحقق خادمي آمن.
+
+## إصدار نسخة جديدة
+
+1. حدّث رقم الإصدار في `package.json` وسجل التغييرات في `CHANGELOG.md`.
+2. افحص التغييرات وشغّل `npm ci --legacy-peer-deps` و`npm run lint` و`npm run build`.
+3. ادمج النسخة في `main`.
+4. أنشئ وسمًا مطابقًا لإصدار SemVer وادفعه:
+
+   ```sh
+   git tag -a v3.9.1 -m "Fadfada 3.9.1"
+   git push origin v3.9.1
+   ```
+
+5. راقب **Actions → Publish Android Release**. عند النجاح، ينشئ GitHub Release تلقائيًا ويضيف:
+   - `app-release.apk` للتثبيت المباشر على Android.
+   - `app-release.aab` لحزمة رفع Google Play.
+   - `android-release-checksums.txt` للتحقق من سلامة التنزيل.
+
+وسم خاطئ أو غياب أحد أسرار التوقيع يفشل البناء بوضوح ولا ينشر إصدارًا غير موقّع.
+
+## مفاتيح التوقيع وGoogle Play
+
+يستخدم APK المباشر وAAB مفتاح الرفع المخزن في GitHub. إذا تقرر النشر مستقبلًا عبر Google Play، احسم استراتيجية **Play App Signing** قبل توزيع التحديثات؛ يجب أن تتوافق شهادة توقيع التطبيق مع طريقة التحديث التي ستستخدمها، وقد تختلف شهادة التطبيق التي يوزعها Play عن شهادة مفتاح الرفع. لا تغيّر مفتاح التوقيع بعد بدء توزيع نسخ عامة دون خطة انتقال واختبار.
