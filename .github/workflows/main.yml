@@ -35,6 +35,8 @@ jobs:
           npm install @capacitor/cli@^8 @capacitor/android@^8 @capacitor/splash-screen@^8 --legacy-peer-deps
 
       - name: Build web app
+        env:
+          VITE_API_SERVER_URL: https://fadfada.94.237.56.nip.io
         run: npm run build
 
       - name: Create Android project
