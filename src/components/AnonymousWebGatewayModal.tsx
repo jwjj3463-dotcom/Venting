@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { ShieldCheck, Lock, Send, X, AlertTriangle } from './ThreeDIcons';
-import { AVATAR_PRESETS, FramedAvatar } from './FramedAvatar';
+import { ShieldCheck, Lock, Send, X, AlertTriangle } from 'lucide-react';
+import { AVATAR_PRESETS, FramedAvatar, OfficialBadge } from './FramedAvatar';
 import { RealmUser } from '../db/realmLocalDB';
 import { fadfadahClient } from '../services/fadfadahNetworkClient';
 import { AppLang, TRANSLATIONS } from '../i18n/translations';
-import { VerifiedBadge } from './VerifiedBadge';
 
 interface AnonymousWebGatewayModalProps {
   isOpen: boolean;
@@ -139,12 +138,10 @@ export const AnonymousWebGatewayModal: React.FC<AnonymousWebGatewayModalProps> =
               />
               <div className="min-w-0">
                 <p className="text-xs text-slate-500 dark:text-slate-400">{t.gatewaySendTo}</p>
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <p className="text-lg font-bold text-slate-900 dark:text-white truncate">
-                    {targetUser.nickname}
-                  </p>
-                  <VerifiedBadge role={targetUser.role} lang={lang} />
-                </div>
+                <p className="flex items-center gap-1 text-lg font-bold text-slate-900 dark:text-white">
+                  <span className="truncate">{targetUser.nickname}</span>
+                  <OfficialBadge role={targetUser.role} />
+                </p>
                 <p className="text-xs text-[#8B5CF6] font-mono-num truncate" dir="ltr">
                   /u/{targetSlug}
                 </p>

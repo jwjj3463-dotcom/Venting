@@ -12,7 +12,7 @@ import {
   Settings,
   ShieldAlert,
   AlertTriangle,
-} from './components/ThreeDIcons';
+} from 'lucide-react';
 import {
   realmDB,
   RealmAppSettings,
@@ -235,8 +235,8 @@ export default function App() {
               تفعيل حساب المالك (إجراء لمرة واحدة)
             </label>
             <p className="text-xs text-purple-200 leading-relaxed">
-              يتطلب رمزًا سريًا عيّنه مشغّل الخادم في إعداداته. لن تُمسح بيانات
-              المالك السابق.
+              يتطلب رمزًا مؤقتًا عيّنه مشغّل الخادم. عند نجاح التفعيل ستُحذف
+              بيانات حساب المالك السابق نهائيًا.
             </p>
             <input
               id="owner-recovery-token"

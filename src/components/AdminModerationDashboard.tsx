@@ -23,7 +23,7 @@ import {
   Globe,
   ExternalLink,
   Layers,
-} from './ThreeDIcons';
+} from 'lucide-react';
 import {
   AdminStatsDTO,
   fadfadahClient,
@@ -33,7 +33,7 @@ import {
   RealmReportModeration,
   RealmUser,
 } from '../db/realmLocalDB';
-import { FramedAvatar } from './FramedAvatar';
+import { FramedAvatar, OfficialBadge } from './FramedAvatar';
 import { AppLang, TRANSLATIONS } from '../i18n/translations';
 import { adService, AdConfig, DEFAULT_AD_CONFIG } from '../services/adService';
 import { AdBanner } from './AdBanner';
@@ -656,6 +656,7 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-sm text-slate-900 dark:text-white">{u.nickname}</span>
+                          <OfficialBadge role={u.role} />
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#8B5CF6]/15 text-[#8B5CF6]">
                             {u.role === 'owner' ? t.roleOwner : u.role === 'moderator' ? t.roleModerator : t.roleUser}
                           </span>

@@ -23,10 +23,11 @@ import {
   AlertTriangle,
   Gift,
   Play,
-} from './ThreeDIcons';
+} from 'lucide-react';
 import {
   AVATAR_PRESETS,
   FramedAvatar,
+  OfficialBadge,
   PROFILE_FRAMES,
 } from './FramedAvatar';
 import {
@@ -41,7 +42,6 @@ import {
 import { fadfadahClient } from '../services/fadfadahNetworkClient';
 import { nativeCopyText } from '../services/androidNative';
 import { AdminModerationDashboard } from './AdminModerationDashboard';
-import { VerifiedBadge } from './VerifiedBadge';
 import { adService } from '../services/adService';
 import {
   AppLang,
@@ -681,7 +681,7 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
         <div>
           <div className="flex items-center justify-center gap-2">
             <h2 className="text-lg font-bold text-slate-900 dark:text-white">{selfUser.nickname}</h2>
-            <VerifiedBadge role={selfUser.role} lang={lang} />
+            <OfficialBadge role={selfUser.role} />
             {isStaff && (
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#8B5CF6] text-white">
                 {selfUser.role === 'owner' ? t.roleOwner : t.roleModerator}
@@ -805,7 +805,7 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
             ))}
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
             {PROFILE_FRAMES.map((fr) => {
               const unlocked = selfUser.is_premium || selfUser.unlocked_frames.includes(fr.id);
               const selected = frameId === fr.id;
@@ -814,13 +814,19 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
                   key={fr.id}
                   type="button"
                   onClick={() => handleSelectFrame(fr.id)}
-                  className={`p-3 rounded-2xl border text-start flex items-center gap-2.5 ${
+                  aria-pressed={selected}
+                  className={`min-h-[76px] min-w-0 px-3 py-2.5 rounded-2xl border text-start flex items-center gap-3 transition-colors ${
                     selected
-                      ? 'border-[#8B5CF6] bg-[#8B5CF6]/10'
+                      ? 'border-[#8B5CF6] bg-[#8B5CF6]/10 shadow-sm'
                       : 'border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#151221]'
                   }`}
                 >
-                  <FramedAvatar avatarUrl={avatarUrl} frameId={fr.id} nickname={fr.nameEn} size="sm" />
+                  <FramedAvatar
+                    avatarUrl={avatarUrl}
+                    frameId={fr.id}
+                    nickname={fr.nameEn}
+                    size="sm"
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
                       {lang === 'ar' ? fr.nameAr : fr.nameEn}
@@ -844,6 +850,11 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
                       )}
                     </p>
                   </div>
+                  {selected && (
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#8B5CF6] text-white">
+                      <Check className="h-3 w-3 stroke-[3]" />
+                    </span>
+                  )}
                 </button>
               );
             })}

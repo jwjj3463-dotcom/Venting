@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Heart, MessageSquarePlus, Send, AlertTriangle } from './ThreeDIcons';
-import { FramedAvatar } from './FramedAvatar';
+import { Heart, MessageSquarePlus, Send, AlertTriangle } from 'lucide-react';
+import { FramedAvatar, OfficialBadge } from './FramedAvatar';
 import {
   RealmPublicVent,
   RealmUser,
@@ -8,7 +8,6 @@ import {
 import { fadfadahClient } from '../services/fadfadahNetworkClient';
 import { AppLang, TRANSLATIONS } from '../i18n/translations';
 import { AdBanner } from './AdBanner';
-import { VerifiedBadge } from './VerifiedBadge';
 
 interface ExploreVentScreenProps {
   selfUser: RealmUser;
@@ -135,10 +134,10 @@ export const ExploreVentScreen: React.FC<ExploreVentScreenProps> = ({
                   nickname={peer.nickname}
                   size="md"
                 />
-                <span className="text-xs font-bold text-slate-900 dark:text-white truncate max-w-[90px]">
+                <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-900 dark:text-white truncate max-w-[90px]">
                   {peer.nickname}
+                  <OfficialBadge role={peer.role} />
                 </span>
-                <VerifiedBadge role={peer.role} lang={lang} />
                 <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[90px]">
                   {peer.is_premium ? (lang === 'ar' ? 'أولوية مميزة' : 'VIP Priority') : peer.country}
                 </span>
@@ -270,12 +269,10 @@ export const ExploreVentScreen: React.FC<ExploreVentScreenProps> = ({
                     size="sm"
                   />
                   <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                        {author.nickname}
-                      </h4>
-                      <VerifiedBadge role={author.role} lang={lang} />
-                    </div>
+                    <h4 className="flex items-center gap-1 text-sm font-bold text-slate-900 dark:text-white">
+                      <span className="truncate">{author.nickname}</span>
+                      <OfficialBadge role={author.role} />
+                    </h4>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
                       {vent.topic} · <span className="font-mono-num">{formatAgo(vent.created_at)}</span>
                     </p>

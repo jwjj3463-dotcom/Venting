@@ -7,8 +7,8 @@ import {
   CheckCircle2,
   XCircle,
   Crown,
-} from './ThreeDIcons';
-import { FramedAvatar } from './FramedAvatar';
+} from 'lucide-react';
+import { FramedAvatar, OfficialBadge } from './FramedAvatar';
 import {
   RealmChatRoom,
   RealmPersonalLink,
@@ -18,7 +18,6 @@ import { fadfadahClient } from '../services/fadfadahNetworkClient';
 import { nativeCopyText, nativeShareUrl } from '../services/androidNative';
 import { AppLang, TRANSLATIONS } from '../i18n/translations';
 import { AdBanner } from './AdBanner';
-import { VerifiedBadge } from './VerifiedBadge';
 
 interface UnifiedInboxScreenProps {
   selfUser: RealmUser;
@@ -277,12 +276,10 @@ export const UnifiedInboxScreen: React.FC<UnifiedInboxScreenProps> = ({
                       size="md"
                     />
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <p className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                          {peer.nickname}
-                        </p>
-                        <VerifiedBadge role={peer.role} lang={lang} />
-                      </div>
+                      <p className="flex items-center gap-1 text-sm font-bold text-slate-900 dark:text-white">
+                        <span className="truncate">{peer.nickname}</span>
+                        <OfficialBadge role={peer.role} />
+                      </p>
                       <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
                         {peer.country} · {peer.languages.join(' · ')}
                       </p>
@@ -361,12 +358,10 @@ export const UnifiedInboxScreen: React.FC<UnifiedInboxScreenProps> = ({
                       size="md"
                     />
                     <div className="min-w-0 flex-1 text-start">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                          {peer.nickname}
-                        </h4>
-                        <VerifiedBadge role={peer.role} lang={lang} />
-                      </div>
+                      <h4 className="flex items-center gap-1 text-sm font-bold text-slate-900 dark:text-white">
+                        <span className="truncate">{peer.nickname}</span>
+                        <OfficialBadge role={peer.role} />
+                      </h4>
                       <p
                         className={`text-xs truncate mt-0.5 ${
                           room.unread_count > 0

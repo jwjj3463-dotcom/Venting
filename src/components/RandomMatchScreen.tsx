@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { MessageCircle, RefreshCw, SkipForward, SlidersHorizontal, Crown, Gift, Play } from './ThreeDIcons';
-import { FramedAvatar } from './FramedAvatar';
+import { MessageCircle, RefreshCw, SkipForward, SlidersHorizontal, Crown, Gift, Play } from 'lucide-react';
+import { FramedAvatar, OfficialBadge } from './FramedAvatar';
 import { RealmUser } from '../db/realmLocalDB';
 import { fadfadahClient, LiveMatchCandidate } from '../services/fadfadahNetworkClient';
 import { AdBanner } from './AdBanner';
-import { VerifiedBadge } from './VerifiedBadge';
 import {
   AppLang,
   AVAILABLE_COUNTRIES,
@@ -234,12 +233,10 @@ export const RandomMatchScreen: React.FC<RandomMatchScreenProps> = ({
               size="lg"
             />
             <div>
-              <div className="flex items-center justify-center gap-1.5">
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                  {currentMatch.peer.nickname}
-                </h3>
-                <VerifiedBadge role={currentMatch.peer.role} lang={lang} />
-              </div>
+              <h3 className="flex items-center justify-center gap-1 text-lg font-bold text-slate-900 dark:text-white">
+                <span>{currentMatch.peer.nickname}</span>
+                <OfficialBadge role={currentMatch.peer.role} />
+              </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 {currentMatch.peer.languages.join(' · ')}
                 {' · '}

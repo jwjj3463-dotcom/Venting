@@ -11,8 +11,8 @@ import {
   CheckCheck,
   ShieldAlert,
   X,
-} from './ThreeDIcons';
-import { FramedAvatar } from './FramedAvatar';
+} from 'lucide-react';
+import { FramedAvatar, OfficialBadge } from './FramedAvatar';
 import {
   RealmChatRoom,
   RealmMessage,
@@ -20,7 +20,6 @@ import {
 } from '../db/realmLocalDB';
 import { fadfadahClient } from '../services/fadfadahNetworkClient';
 import { AppLang, TRANSLATIONS } from '../i18n/translations';
-import { VerifiedBadge } from './VerifiedBadge';
 
 interface ChatRoomViewProps {
   room: RealmChatRoom;
@@ -214,10 +213,10 @@ export const ChatRoomView: React.FC<ChatRoomViewProps> = ({
             size="sm"
           />
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <h2 className="text-sm font-bold truncate">{peerUser.nickname}</h2>
-              <VerifiedBadge role={peerUser.role} lang={lang} />
-            </div>
+            <h2 className="flex items-center gap-1 text-sm font-bold truncate">
+              <span className="truncate">{peerUser.nickname}</span>
+              <OfficialBadge role={peerUser.role} />
+            </h2>
             <p className="text-[11px] text-purple-200/85 truncate">
               {peerTyping
                 ? t.typingNow
