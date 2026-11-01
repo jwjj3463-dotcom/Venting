@@ -39,6 +39,10 @@ export interface AdminStatsDTO {
 
 type ConnectionState = 'connecting' | 'connected' | 'offline';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
 class FadfadahNetworkClient {
   private ws: WebSocket | null = null;
   private reconnectTimer: number | null = null;
@@ -115,30 +119,100 @@ class FadfadahNetworkClient {
     try {
       if (!settings.auth_token) {
         await this.registerFreshDeviceAccount();
-      } else {
-        const ok = await this.pullFullSync();
-        if (!ok) {
-          await this.registerFreshDeviceAccount();
-          await this.pullFullSync();
-        }
       }
+
+      let synced = await this.pullFullSync();
+      if (!synced) {
+        await this.registerFreshDeviceAccount();
+        synced = await this.pullFullSync();
+      }
+      if (!synced) {
+        throw new Error('تعذر التحقق من الحساب بعد التسجيل.');
+      }
+      if (!realmDB.findSelfUser() || !realmDB.findPersonalLink()) {
+        throw new Error('اكتملت المزامنة دون بيانات الحساب أو رابطه الشخصي.');
+      }
+
       this.connectWebSocket();
-    } catch {
+    } catch (error) {
       this.connectionState = 'offline';
       this.emitState();
-      this.scheduleReconnect();
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  private async fetchBootstrap(
+    url: string,
+    init: RequestInit,
+    endpoint: string
+  ): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } catch (error) {
+      const reason =
+        error instanceof Error && error.name === 'AbortError'
+          ? 'انتهت مهلة الاتصال.'
+          : error instanceof Error
+            ? error.message
+            : String(error);
+      throw new Error(`${endpoint}: ${reason}`);
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  }
+
+  private async readBootstrapResponse<T>(res: Response, endpoint: string): Promise<T> {
+    if (!res.ok) {
+      let detail = '';
+      try {
+        const body: unknown = await res.json();
+        if (isRecord(body) && typeof body.error === 'string') {
+          detail = `: ${body.error}`;
+        }
+      } catch {
+        // The HTTP status remains useful when the server does not return JSON.
+      }
+      throw new Error(`${endpoint} (HTTP ${res.status})${detail}`);
+    }
+
+    try {
+      return (await res.json()) as T;
+    } catch {
+      throw new Error(`${endpoint}: استجابة JSON غير صالحة.`);
     }
   }
 
   private async registerFreshDeviceAccount(): Promise<void> {
     const base = this.getServerBaseUrl();
-    const res = await fetch(`${base}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    if (!res.ok) throw new Error('Registration failed');
-    const data = (await res.json()) as {
+    const res = await this.fetchBootstrap(
+      `${base}/api/auth/register`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      },
+      'تعذر تسجيل الحساب'
+    );
+    const data: unknown = await this.readBootstrapResponse<unknown>(
+      res,
+      'تعذر تسجيل الحساب'
+    );
+    if (
+      !isRecord(data) ||
+      typeof data.authToken !== 'string' ||
+      !data.authToken ||
+      !isRecord(data.selfUser) ||
+      typeof data.selfUser.id !== 'string' ||
+      !isRecord(data.personalLink) ||
+      typeof data.personalLink.id !== 'string' ||
+      data.personalLink.user_id !== data.selfUser.id
+    ) {
+      throw new Error('تعذر تسجيل الحساب: بيانات الاستجابة غير مكتملة.');
+    }
+
+    const registration = data as {
       authToken: string;
       selfUser: RealmUser;
       personalLink: RealmPersonalLink;
@@ -148,29 +222,49 @@ class FadfadahNetworkClient {
     await realmDB.write((tx) => {
       tx.create('app_settings', {
         ...currentSettings,
-        auth_token: data.authToken,
+        auth_token: registration.authToken,
       });
-      tx.create('users', { ...data.selfUser, is_self: true });
-      tx.create('personal_links', data.personalLink);
+      tx.create('users', { ...registration.selfUser, is_self: true });
+      tx.create('personal_links', registration.personalLink);
     });
   }
 
   async pullFullSync(): Promise<boolean> {
     const base = this.getServerBaseUrl();
-    const res = await fetch(`${base}/api/sync`, {
-      method: 'GET',
-      headers: this.getAuthHeaders(),
-    });
+    const res = await this.fetchBootstrap(
+      `${base}/api/sync`,
+      {
+        method: 'GET',
+        headers: this.getAuthHeaders(),
+      },
+      'تعذرت مزامنة البيانات'
+    );
     if (res.status === 401) {
       return false;
     }
-    if (!res.ok) {
-      throw new Error('Sync error');
+    const data: unknown = await this.readBootstrapResponse<unknown>(
+      res,
+      'تعذرت مزامنة البيانات'
+    );
+    if (
+      !isRecord(data) ||
+      !isRecord(data.selfUser) ||
+      typeof data.selfUser.id !== 'string' ||
+      !isRecord(data.personalLink) ||
+      typeof data.personalLink.id !== 'string' ||
+      data.personalLink.user_id !== data.selfUser.id ||
+      !Array.isArray(data.rooms) ||
+      !Array.isArray(data.messages) ||
+      !Array.isArray(data.peers) ||
+      !Array.isArray(data.vents) ||
+      (data.payments !== undefined && !Array.isArray(data.payments))
+    ) {
+      throw new Error('تعذرت مزامنة البيانات: استجابة الخادم غير مكتملة.');
     }
 
-    const data = (await res.json()) as {
+    const syncData = data as {
       selfUser: RealmUser;
-      personalLink?: RealmPersonalLink;
+      personalLink: RealmPersonalLink;
       rooms: RealmChatRoom[];
       messages: RealmMessage[];
       peers: Array<Omit<RealmUser, 'is_self'>>;
@@ -183,8 +277,8 @@ class FadfadahNetworkClient {
       for (const existingU of realmDB.objects('users')) {
         tx.delete('users', existingU.id);
       }
-      tx.create('users', { ...data.selfUser, is_self: true });
-      for (const p of data.peers) {
+      tx.create('users', { ...syncData.selfUser, is_self: true });
+      for (const p of syncData.peers) {
         tx.create('users', {
           ...p,
           premium_plan: p.is_premium ? 'monthly' : 'free',
@@ -199,15 +293,13 @@ class FadfadahNetworkClient {
         });
       }
 
-      if (data.personalLink) {
-        tx.create('personal_links', data.personalLink);
-      }
+      tx.create('personal_links', syncData.personalLink);
 
       // Reconcile rooms
       for (const existingR of realmDB.objects('chat_rooms')) {
         tx.delete('chat_rooms', existingR.id);
       }
-      for (const r of data.rooms) {
+      for (const r of syncData.rooms) {
         tx.create('chat_rooms', r);
       }
 
@@ -215,7 +307,7 @@ class FadfadahNetworkClient {
       for (const existingM of realmDB.objects('messages')) {
         tx.delete('messages', existingM.id);
       }
-      for (const m of data.messages) {
+      for (const m of syncData.messages) {
         tx.create('messages', m);
       }
 
@@ -223,16 +315,16 @@ class FadfadahNetworkClient {
       for (const existingV of realmDB.objects('public_vents')) {
         tx.delete('public_vents', existingV.id);
       }
-      for (const v of data.vents) {
+      for (const v of syncData.vents) {
         tx.create('public_vents', v);
       }
 
       // Reconcile payments
-      if (Array.isArray(data.payments)) {
+      if (Array.isArray(syncData.payments)) {
         for (const existingTx of realmDB.objects('payment_transactions')) {
           tx.delete('payment_transactions', existingTx.id);
         }
-        for (const ptx of data.payments) {
+        for (const ptx of syncData.payments) {
           tx.create('payment_transactions', ptx);
         }
       }

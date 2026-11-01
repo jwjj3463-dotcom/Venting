@@ -36,7 +36,7 @@ jobs:
 
       - name: Build web app
         env:
-          VITE_API_SERVER_URL: https://fadfada.94.237.56.nip.io
+          VITE_API_SERVER_URL: https://fadfada.94.237.56.203.nip.io
         run: npm run build
 
       - name: Create Android project

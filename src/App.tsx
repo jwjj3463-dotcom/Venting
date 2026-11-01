@@ -42,6 +42,7 @@ type PrimaryTab = 'chats' | 'match' | 'explore' | 'profile';
 export default function App() {
   const [ready, setReady] = useState(false);
   const [bootError, setBootError] = useState('');
+  const [bootAttempt, setBootAttempt] = useState(0);
   const [tick, setTick] = useState(0);
 
   const [activeTab, setActiveTab] = useState<PrimaryTab>('chats');
@@ -61,12 +62,14 @@ export default function App() {
   navStateRef.current = { activeRoomId, gatewayTargetSlug, activeTab };
 
   useEffect(() => {
+    let cancelled = false;
     let unsubRealm = () => {};
     let unsubNet = () => {};
 
-    fadfadahClient
-      .bootstrapSessionAndSync()
-      .then(() => {
+    const bootstrap = async () => {
+      try {
+        await fadfadahClient.bootstrapSessionAndSync();
+        if (cancelled) return;
         unsubRealm = realmDB.addListener(() => setTick((v) => v + 1));
         unsubNet = fadfadahClient.subscribe(() => setTick((v) => v + 1));
         setReady(true);
@@ -76,10 +79,14 @@ export default function App() {
         if (sharedSlug) {
           setGatewayTargetSlug(sharedSlug);
         }
-      })
-      .catch((err) => {
-        setBootError(err instanceof Error ? err.message : 'تعذر تهيئة التطبيق');
-      });
+      } catch (err) {
+        if (!cancelled) {
+          setBootError(err instanceof Error ? err.message : 'تعذر تهيئة التطبيق');
+        }
+      }
+    };
+
+    void bootstrap();
 
     // Native Android Hardware Back Button Handling
     const cleanupBack = registerAndroidHardwareBackButton(() => {
@@ -100,11 +107,12 @@ export default function App() {
     });
 
     return () => {
+      cancelled = true;
       unsubRealm();
       unsubNet();
       cleanupBack();
     };
-  }, []);
+  }, [bootAttempt]);
 
   const settings: RealmAppSettings = ready
     ? realmDB.getSettings()
@@ -131,6 +139,17 @@ export default function App() {
         <div className="max-w-sm w-full rounded-3xl bg-white dark:bg-[#1E1B2E] border border-rose-300 dark:border-rose-800 p-6 text-center space-y-3">
           <p className="text-base font-bold text-rose-600">خطأ في تهيئة تطبيق فضفضة</p>
           <p className="text-xs text-slate-600 dark:text-slate-300">{bootError}</p>
+          <button
+            type="button"
+            onClick={() => {
+              setBootError('');
+              setReady(false);
+              setBootAttempt((attempt) => attempt + 1);
+            }}
+            className="min-h-[44px] px-5 rounded-xl bg-[#8B5CF6] text-xs font-bold text-white"
+          >
+            إعادة المحاولة
+          </button>
         </div>
       </div>
     );
