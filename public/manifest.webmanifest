@@ -1,0 +1,16 @@
+{
+  "name": "فضفضة - Fadfadah",
+  "short_name": "فضفضة",
+  "description": "منصة فضفضة ورسائل سرية وتواصل آمن للمستخدمين",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#151221",
+  "theme_color": "#2D1B69",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}

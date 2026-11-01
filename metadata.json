@@ -1,0 +1,8 @@
+{
+  "name": "فضفضة - Fadfadah",
+  "description": "منصة فضفضة ورسائل سرية وتواصل آمن مع رادار المطابقة الحية ومنظومة الإعلانات والاشتراكات المؤكدة.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
