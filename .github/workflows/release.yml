@@ -75,6 +75,18 @@ jobs:
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/fadfadah-upload-key.p12"
           test -s "$RUNNER_TEMP/fadfadah-upload-key.p12"
 
+      - name: Verify release signing key
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          keytool -list \
+            -keystore "$RUNNER_TEMP/fadfadah-upload-key.p12" \
+            -storetype PKCS12 \
+            -storepass:env ANDROID_KEYSTORE_PASSWORD \
+            -alias "$ANDROID_KEY_ALIAS" >/dev/null
+          echo "Android release keystore and alias verified."
+
       - name: Build signed APK and Google Play bundle
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
