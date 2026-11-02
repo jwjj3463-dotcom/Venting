@@ -4,6 +4,20 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.10.6 — إعدادات موحدة لشحن النقاط واشتراكات VIP | Unified top-up and VIP settings
+
+### أُضيف
+
+- إدارة باقات النقاط وباقات VIP ووسائل الدفع من مكان واحد في لوحة الإدارة، مع تحديد السعر والنقاط والعملة ومدة الاشتراك.
+- تحديث إعدادات الشحن وطلبات المستخدمين مباشرةً دون الحاجة إلى إعادة تشغيل التطبيق.
+- عرض خطط VIP النشطة من الخادم، وتثبيت السعر والمدة والمكافأة في الطلب وقت إنشائه حتى لا تتغير الطلبات السابقة عند تعديل الباقات.
+
+### Added
+
+- Manage points packages, VIP plans, and payment methods together in the admin panel, including price, bonus points, currency, and duration.
+- Refresh wallet configuration and request statuses live without restarting the app.
+- Load active VIP plans from the server and preserve each request's original price, duration, and bonus when plans change.
+
 ## 3.10.5 — اشتراكات VIP اليدوية وإصلاح إرسال الصور | Manual VIP subscriptions and image sending
 
 ### أُضيف وأُصلح

@@ -12,7 +12,7 @@ export type ChatRoomType = 'LINK_BASED' | 'RANDOM';
 export type ChatRoomStatus = 'PENDING' | 'ACCEPTED' | 'BLOCKED';
 export type MessageStatus = 'SENT' | 'READ';
 export type MediaType = 'text' | 'image' | 'sticker';
-export type PremiumPlan = 'free' | 'weekly' | 'monthly' | 'quarterly';
+export type PremiumPlan = 'free' | (string & {});
 
 export type ReportStatus = 'PENDING' | 'UNDER_REVIEW' | 'ACTION_TAKEN' | 'DISMISSED';
 export type ReportTargetType = 'user' | 'message' | 'vent';

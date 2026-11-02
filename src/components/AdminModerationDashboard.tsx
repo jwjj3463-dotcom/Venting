@@ -33,6 +33,7 @@ import {
   fadfadahClient,
   ManualTopupConfigDTO,
   ManualTopupRequestDTO,
+  ManualVipPlanDTO,
 } from '../services/fadfadahNetworkClient';
 import {
   generateUUID,
@@ -89,6 +90,7 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
   const [manualTopups, setManualTopups] = useState<ManualTopupRequestDTO[]>([]);
   const [manualTopupConfig, setManualTopupConfig] = useState<ManualTopupConfigDTO>({
     packages: [],
+    vip_plans: [],
     payment_methods: [],
   });
   const [savingManualTopupConfig, setSavingManualTopupConfig] = useState(false);
@@ -229,8 +231,41 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
     }));
   };
 
+  const updateVipPlan = (planId: string, updates: Partial<ManualVipPlanDTO>) => {
+    setManualTopupConfig((config) => ({
+      ...config,
+      vip_plans: config.vip_plans.map((plan) =>
+        plan.id === planId ? { ...plan, ...updates } : plan
+      ),
+    }));
+  };
+
   useEffect(() => {
     loadCurrentData();
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'manual_topups' || selfUser.role !== 'owner') return;
+    return fadfadahClient.subscribeManualTopupConfigUpdates(() => {
+      void fadfadahClient
+        .getAdminManualTopupConfig()
+        .then(setManualTopupConfig)
+        .catch((error: unknown) =>
+          setErrorMessage(error instanceof Error ? error.message : 'تعذر تحديث إعدادات الشحن.')
+        );
+    });
+  }, [activeTab, selfUser.role]);
+
+  useEffect(() => {
+    if (activeTab !== 'manual_topups') return;
+    return fadfadahClient.subscribeManualTopupUpdates(() => {
+      void fadfadahClient
+        .getAdminManualTopups()
+        .then(setManualTopups)
+        .catch((error: unknown) =>
+          setErrorMessage(error instanceof Error ? error.message : 'تعذر تحديث طلبات الشحن.')
+        );
+    });
   }, [activeTab]);
 
   useEffect(() => {
@@ -923,6 +958,12 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
                               ? lang === 'ar' ? 'نقطة ترحيبية' : 'bonus points'
                               : lang === 'ar' ? 'نقطة' : 'points'}
                           </p>
+                          {request.premium_duration_days && (
+                            <p className="text-[11px] text-slate-500">
+                              {lang === 'ar' ? 'مدة الاشتراك عند الطلب: ' : 'Duration at purchase: '}
+                              {request.premium_duration_days} {lang === 'ar' ? 'يوم' : 'days'}
+                            </p>
+                          )}
                         </div>
                         <span
                           className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${
@@ -1011,13 +1052,68 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
               <section className="rounded-3xl bg-white dark:bg-[#1E1B2E] border border-slate-200 dark:border-white/10 p-5 space-y-5">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                    {lang === 'ar' ? 'باقات الشحن ووسائل الدفع' : 'Top-up packages and payment methods'}
+                    {lang === 'ar'
+                      ? 'إعدادات الشحن وباقات VIP ووسائل الدفع'
+                      : 'Top-ups, VIP plans and payment methods'}
                   </h3>
                   <p className="mt-1 text-[11px] text-slate-500">
                     {lang === 'ar'
                       ? 'أدخل بياناتك الفعلية بنفسك. تظل الخيارات غير ظاهرة للمستخدمين حتى تفعيلها وحفظها.'
                       : 'Enter your real payment details. Options remain unavailable to users until enabled and saved.'}
                   </p>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="text-xs font-bold">{lang === 'ar' ? 'باقات VIP' : 'VIP plans'}</h4>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setManualTopupConfig((config) => ({
+                          ...config,
+                          vip_plans: [
+                            ...config.vip_plans,
+                            {
+                              id: generateUUID(),
+                              title_ar: '',
+                              title_en: '',
+                              points: 0,
+                              amount: 0,
+                              currency: 'USD',
+                              duration_days: 30,
+                              enabled: false,
+                            },
+                          ],
+                        }))
+                      }
+                      className="min-h-[38px] px-3 rounded-xl bg-amber-500 text-white text-xs font-bold flex items-center gap-1"
+                    >
+                      <Plus className="w-4 h-4" /> {lang === 'ar' ? 'إضافة باقة VIP' : 'Add VIP plan'}
+                    </button>
+                  </div>
+                  {manualTopupConfig.vip_plans.map((plan) => (
+                    <div key={plan.id} className="rounded-2xl bg-amber-50/60 dark:bg-amber-950/20 p-3 space-y-2">
+                      <div className="grid sm:grid-cols-2 gap-2">
+                        <input value={plan.title_ar} onChange={(e) => updateVipPlan(plan.id, { title_ar: e.target.value })} maxLength={60} placeholder="اسم الباقة بالعربية" className="min-h-[40px] rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1E1B2E] px-2.5 text-xs" />
+                        <input value={plan.title_en} onChange={(e) => updateVipPlan(plan.id, { title_en: e.target.value })} maxLength={60} placeholder="VIP plan name" className="min-h-[40px] rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1E1B2E] px-2.5 text-xs" />
+                        <input type="number" min="0" step="1" value={plan.points || ''} onChange={(e) => updateVipPlan(plan.id, { points: Number(e.target.value) })} placeholder={lang === 'ar' ? 'النقاط الترحيبية' : 'Bonus points'} className="min-h-[40px] rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1E1B2E] px-2.5 text-xs" />
+                        <input type="number" min="1" max="3650" step="1" value={plan.duration_days || ''} onChange={(e) => updateVipPlan(plan.id, { duration_days: Number(e.target.value) })} placeholder={lang === 'ar' ? 'المدة بالأيام' : 'Duration in days'} className="min-h-[40px] rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1E1B2E] px-2.5 text-xs" />
+                        <div className="flex gap-2">
+                          <input type="number" min="0.01" step="0.01" value={plan.amount || ''} onChange={(e) => updateVipPlan(plan.id, { amount: Number(e.target.value) })} placeholder={lang === 'ar' ? 'المبلغ' : 'Amount'} className="min-h-[40px] w-full min-w-0 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1E1B2E] px-2.5 text-xs" />
+                          <input value={plan.currency} onChange={(e) => updateVipPlan(plan.id, { currency: e.target.value.toUpperCase() })} maxLength={3} placeholder="USD" className="min-h-[40px] w-20 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1E1B2E] px-2 text-xs uppercase" />
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <label className="flex items-center gap-2 text-xs">
+                          <input type="checkbox" checked={plan.enabled} onChange={(e) => updateVipPlan(plan.id, { enabled: e.target.checked })} />
+                          {lang === 'ar' ? 'متاحة للمستخدمين' : 'Available to users'}
+                        </label>
+                        <button type="button" onClick={() => setManualTopupConfig((config) => ({ ...config, vip_plans: config.vip_plans.filter((item) => item.id !== plan.id) }))} aria-label={lang === 'ar' ? 'حذف باقة VIP' : 'Delete VIP plan'} className="min-h-[36px] min-w-[36px] rounded-lg text-rose-600 flex items-center justify-center">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
                 <div className="space-y-3">

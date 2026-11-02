@@ -56,10 +56,22 @@ export interface ManualPaymentMethodDTO {
   enabled: boolean;
 }
 
+export interface ManualVipPlanDTO {
+  id: string;
+  title_ar: string;
+  title_en: string;
+  points: number;
+  amount: number;
+  currency: string;
+  duration_days: number;
+  enabled: boolean;
+}
+
 export interface ManualTopupRequestDTO {
   id: string;
   request_type: 'TOPUP' | 'SUBSCRIPTION';
   premium_plan?: Exclude<PremiumPlan, 'free'>;
+  premium_duration_days?: number;
   user_id: string;
   user_nickname: string;
   package_title_ar: string;
@@ -80,7 +92,9 @@ export interface ManualTopupRequestDTO {
 
 export interface ManualTopupConfigDTO {
   packages: ManualTopupPackageDTO[];
+  vip_plans: ManualVipPlanDTO[];
   payment_methods: ManualPaymentMethodDTO[];
+  updated_at?: number;
 }
 
 type ConnectionState = 'connecting' | 'connected' | 'offline';
@@ -108,6 +122,8 @@ class FadfadahNetworkClient {
   private stateListeners = new Set<() => void>();
   private manualClose = false;
   private latestWalletNotice: WalletNotice | null = null;
+  private walletConfigListeners = new Set<() => void>();
+  private manualTopupListeners = new Set<() => void>();
 
   getServerBaseUrl(): string {
     const customUrl = realmDB.getSettings().custom_server_url?.trim();
@@ -155,6 +171,20 @@ class FadfadahNetworkClient {
     return () => {
       this.stateListeners.delete(cb);
     };
+  }
+
+  subscribeManualTopupConfigUpdates(cb: () => void): () => void {
+    this.walletConfigListeners.add(cb);
+    return () => this.walletConfigListeners.delete(cb);
+  }
+
+  subscribeManualTopupUpdates(cb: () => void): () => void {
+    this.manualTopupListeners.add(cb);
+    return () => this.manualTopupListeners.delete(cb);
+  }
+
+  private notifyManualTopupListeners(): void {
+    for (const listener of this.manualTopupListeners) listener();
   }
 
   private emitState(): void {
@@ -721,7 +751,9 @@ class FadfadahNetworkClient {
       const transaction = ev.transaction as RealmPaymentTransaction | undefined;
       const requestType = ev.request_type === 'SUBSCRIPTION' ? 'SUBSCRIPTION' : 'TOPUP';
       const premiumPlan =
-        ev.premium_plan === 'weekly' || ev.premium_plan === 'monthly' || ev.premium_plan === 'quarterly'
+        typeof ev.premium_plan === 'string' &&
+        /^[a-zA-Z0-9_-]{1,64}$/.test(ev.premium_plan) &&
+        ev.premium_plan !== 'free'
           ? ev.premium_plan
           : undefined;
       await realmDB.write((tx) => {
@@ -752,6 +784,16 @@ class FadfadahNetworkClient {
         reason: typeof ev.rejection_reason === 'string' ? ev.rejection_reason : '',
       };
       await triggerLightHaptic();
+      this.notifyManualTopupListeners();
+      this.emitState();
+    } else if (type === 'wallet:config_updated') {
+      for (const listener of this.walletConfigListeners) listener();
+      this.emitState();
+    } else if (
+      type === 'wallet:manual_topup_created' ||
+      type === 'wallet:manual_topup_reviewed'
+    ) {
+      this.notifyManualTopupListeners();
       this.emitState();
     } else if (type === 'peer:updated') {
       const peer = ev.peer as RealmUser | undefined;
@@ -1571,7 +1613,13 @@ class FadfadahNetworkClient {
   async getManualTopupConfig(): Promise<ManualTopupConfigDTO> {
     const res = await fetch(`${this.getServerBaseUrl()}/api/payments/manual/config`);
     if (!res.ok) throw new Error('تعذر تحميل باقات الشحن ووسائل الدفع.');
-    return (await res.json()) as ManualTopupConfigDTO;
+    const config = (await res.json()) as Partial<ManualTopupConfigDTO>;
+    return {
+      packages: config.packages || [],
+      vip_plans: config.vip_plans || [],
+      payment_methods: config.payment_methods || [],
+      updated_at: config.updated_at,
+    };
   }
 
   async getManualTopupRequests(): Promise<ManualTopupRequestDTO[]> {
@@ -1681,19 +1729,27 @@ class FadfadahNetworkClient {
       headers: this.getAuthHeaders(),
     });
     if (!res.ok) throw new Error('تعذر تحميل إعدادات الشحن اليدوي.');
-    return (await res.json()) as ManualTopupConfigDTO;
+    const config = (await res.json()) as Partial<ManualTopupConfigDTO>;
+    return {
+      packages: config.packages || [],
+      vip_plans: config.vip_plans || [],
+      payment_methods: config.payment_methods || [],
+      updated_at: config.updated_at,
+    };
   }
 
   async saveAdminManualTopupConfig(
     config: ManualTopupConfigDTO
-  ): Promise<{ ok: boolean; error?: string }> {
+  ): Promise<{ ok: boolean; config?: ManualTopupConfigDTO; error?: string }> {
     const res = await fetch(`${this.getServerBaseUrl()}/api/admin/manual-topups/config`, {
       method: 'PUT',
       headers: this.getAuthHeaders(),
       body: JSON.stringify(config),
     });
-    const data = (await res.json()) as { error?: string };
-    return res.ok ? { ok: true } : { ok: false, error: data.error || 'تعذر حفظ إعدادات الشحن.' };
+    const data = (await res.json()) as ManualTopupConfigDTO & { error?: string };
+    return res.ok
+      ? { ok: true, config: data }
+      : { ok: false, error: data.error || 'تعذر حفظ إعدادات الشحن.' };
   }
 
   async deleteAccountPermanently(): Promise<void> {

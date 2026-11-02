@@ -78,7 +78,7 @@ export default function App() {
     status: 'APPROVED' | 'REJECTED';
     requestType: 'TOPUP' | 'SUBSCRIPTION';
     points: number;
-    premiumPlan?: 'weekly' | 'monthly' | 'quarterly';
+    premiumPlan?: string;
     reason: string;
   } | null>(null);
 

@@ -33,7 +33,6 @@ import {
 import {
   generateUUID,
   FADFADAH_REALM_SCHEMAS,
-  PremiumPlan,
   realmDB,
   RealmAppSettings,
   RealmPaymentTransaction,
@@ -56,12 +55,6 @@ import {
   AVAILABLE_LANGUAGES,
   TRANSLATIONS,
 } from '../i18n/translations';
-
-const MANUAL_VIP_PLANS = [
-  { id: 'weekly', titleAr: 'أسبوعية', titleEn: 'Weekly', price: '$2.99', bonus: 150 },
-  { id: 'monthly', titleAr: 'شهرية', titleEn: 'Monthly', price: '$7.99', bonus: 500 },
-  { id: 'quarterly', titleAr: '3 أشهر', titleEn: '3 Months', price: '$18.99', bonus: 1500 },
-] as const;
 
 const PROFILE_AVATAR_REQUEST_LIMIT = 700_000;
 
@@ -151,12 +144,13 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
   );
   const [manualTopupConfig, setManualTopupConfig] = useState<ManualTopupConfigDTO>({
     packages: [],
+    vip_plans: [],
     payment_methods: [],
   });
   const [manualTopupRequests, setManualTopupRequests] = useState<ManualTopupRequestDTO[]>([]);
   const [selectedTopupPackage, setSelectedTopupPackage] = useState('');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');
-  const [selectedVipPlan, setSelectedVipPlan] = useState<Exclude<PremiumPlan, 'free'> | ''>('');
+  const [selectedVipPlan, setSelectedVipPlan] = useState<string>('');
   const [transactionReference, setTransactionReference] = useState('');
   const [paymentProof, setPaymentProof] = useState('');
   const [submittingTopup, setSubmittingTopup] = useState(false);
@@ -203,6 +197,11 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
             ? current
             : config.payment_methods[0]?.id || ''
         );
+        setSelectedVipPlan((current) =>
+          config.vip_plans.some((plan) => plan.id === current)
+            ? current
+            : config.vip_plans[0]?.id || ''
+        );
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -214,6 +213,48 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
     return () => {
       cancelled = true;
     };
+  }, [subView]);
+
+  useEffect(() => {
+    if (subView !== 'monetization') return;
+    return fadfadahClient.subscribeManualTopupUpdates(() => {
+      void fadfadahClient
+        .getManualTopupRequests()
+        .then(setManualTopupRequests)
+        .catch((error: unknown) =>
+          setSaveToast(error instanceof Error ? error.message : 'تعذر تحديث حالة طلبات الدفع.')
+        );
+    });
+  }, [subView]);
+
+  useEffect(() => {
+    if (subView !== 'monetization') return;
+    return fadfadahClient.subscribeManualTopupConfigUpdates(() => {
+      void Promise.all([
+        fadfadahClient.getManualTopupConfig(),
+        fadfadahClient.getManualTopupRequests(),
+      ])
+        .then(([config, requests]) => {
+          setManualTopupConfig(config);
+          setManualTopupRequests(requests);
+          setSelectedTopupPackage((current) =>
+            config.packages.some((pack) => pack.id === current) ? current : config.packages[0]?.id || ''
+          );
+          setSelectedPaymentMethod((current) =>
+            config.payment_methods.some((method) => method.id === current)
+              ? current
+              : config.payment_methods[0]?.id || ''
+          );
+          setSelectedVipPlan((current) =>
+            config.vip_plans.some((plan) => plan.id === current)
+              ? current
+              : config.vip_plans[0]?.id || ''
+          );
+        })
+        .catch((error: unknown) =>
+          setSaveToast(error instanceof Error ? error.message : 'تعذر تحديث إعدادات الشحن.')
+        );
+    });
   }, [subView]);
 
   const toggleInterest = (item: string) => {
@@ -555,9 +596,23 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
               ? 'محادثات عشوائية غير محدودة بدون حد يومي · فتح جميع الإطارات الملكية الحصرية · أولوية الظهور في رادار المطابقة وقائمة المتصلين · شارة العضوية الذهبية VIP · رصيد نقاط ترحيبي مع كل باقة.'
               : 'Unlimited random matches · All VIP royal frames · Priority online visibility · Gold VIP Badge · Bonus points.'}
           </p>
+          <ol className="grid grid-cols-3 gap-2 text-[10px] sm:text-xs">
+            {[
+              lang === 'ar' ? 'اختر باقة VIP' : 'Choose a VIP plan',
+              lang === 'ar' ? 'حوّل عبر الوسيلة' : 'Make the transfer',
+              lang === 'ar' ? 'أرسل الإثبات' : 'Submit the proof',
+            ].map((step, index) => (
+              <li key={step} className="rounded-xl border border-white/10 bg-white/5 p-2.5">
+                <span className="me-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-amber-300/20 text-amber-200 font-bold">
+                  {index + 1}
+                </span>
+                {step}
+              </li>
+            ))}
+          </ol>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-            {MANUAL_VIP_PLANS.map((pkg) => {
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+            {manualTopupConfig.vip_plans.map((pkg) => {
               const active = selfUser.premium_plan === pkg.id && isRealmPremiumActive(selfUser);
               const selected = selectedVipPlan === pkg.id;
               return (
@@ -573,10 +628,13 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
                   }`}
                 >
                   <div>
-                    <p className="text-sm font-bold">{lang === 'ar' ? pkg.titleAr : pkg.titleEn}</p>
-                    <p className="text-xl font-bold font-mono-num mt-1">{pkg.price}</p>
+                    <p className="text-sm font-bold">{lang === 'ar' ? pkg.title_ar : pkg.title_en}</p>
+                    <p className="text-xl font-bold font-mono-num mt-1">
+                      {pkg.amount} {pkg.currency}
+                    </p>
                     <p className="text-[11px] text-purple-200 mt-1">
-                      +{pkg.bonus} {lang === 'ar' ? 'نقطة ترحيبية' : 'bonus points'}
+                      {pkg.duration_days} {lang === 'ar' ? 'يوم' : 'days'} · +{pkg.points}{' '}
+                      {lang === 'ar' ? 'نقطة ترحيبية' : 'bonus points'}
                     </p>
                   </div>
                   <span className="text-xs font-semibold">
@@ -586,6 +644,13 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
               );
             })}
           </div>
+          {manualTopupConfig.vip_plans.length === 0 && (
+            <p className="rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-purple-100/80">
+              {lang === 'ar'
+                ? 'لا توجد باقات VIP متاحة حاليًا.'
+                : 'No VIP plans are currently available.'}
+            </p>
+          )}
 
           {isRealmPremiumActive(selfUser) && selfUser.premium_expires_at && (
             <p className="text-[11px] text-purple-100">
@@ -594,7 +659,7 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
             </p>
           )}
 
-          {selectedVipPlan && (
+          {selectedVipPlan && manualTopupConfig.vip_plans.some((plan) => plan.id === selectedVipPlan) && (
             manualTopupConfig.payment_methods.length === 0 ? (
               <div className="rounded-2xl border border-amber-200/30 bg-amber-300/10 p-4 text-xs leading-relaxed text-amber-100">
                 {lang === 'ar'
@@ -609,9 +674,12 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
                       {lang === 'ar' ? 'طلب اشتراك يدوي' : 'Manual subscription request'}
                     </p>
                     <p className="mt-1 text-[11px] text-purple-100">
-                      {MANUAL_VIP_PLANS.find((plan) => plan.id === selectedVipPlan)?.price}
+                      {(() => {
+                        const plan = manualTopupConfig.vip_plans.find((item) => item.id === selectedVipPlan);
+                        return plan ? `${plan.amount} ${plan.currency}` : '';
+                      })()}
                       {' · '}
-                      +{MANUAL_VIP_PLANS.find((plan) => plan.id === selectedVipPlan)?.bonus}
+                      +{manualTopupConfig.vip_plans.find((plan) => plan.id === selectedVipPlan)?.points || 0}
                       {' '}{lang === 'ar' ? 'نقطة ترحيبية' : 'bonus points'}
                     </p>
                   </div>
@@ -718,6 +786,23 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
               ? 'اختر باقة ووسيلة دفع، ثم أرفق رقم العملية وصورة الإثبات. لن تضاف النقاط إلا بعد مراجعة التحويل من الإدارة.'
               : 'Choose a package and payment method, then provide the transfer reference and proof. Points are added only after admin review.'}
           </p>
+          <ol className="grid grid-cols-3 gap-2 text-[10px] sm:text-xs">
+            {[
+              lang === 'ar' ? 'اختر باقة النقاط' : 'Choose a points package',
+              lang === 'ar' ? 'حوّل للمحفظة' : 'Make the transfer',
+              lang === 'ar' ? 'أرفق الإثبات' : 'Attach the proof',
+            ].map((step, index) => (
+              <li
+                key={step}
+                className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-slate-700 dark:border-white/10 dark:bg-[#151221] dark:text-slate-200"
+              >
+                <span className="me-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#8B5CF6]/15 text-[#8B5CF6] font-bold">
+                  {index + 1}
+                </span>
+                {step}
+              </li>
+            ))}
+          </ol>
 
           {manualTopupConfig.packages.length === 0 || manualTopupConfig.payment_methods.length === 0 ? (
             <div className="rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 p-4 text-xs leading-relaxed text-amber-900 dark:text-amber-200">
@@ -868,6 +953,12 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
                         ? lang === 'ar' ? 'نقطة ترحيبية' : 'bonus points'
                         : lang === 'ar' ? 'نقطة' : 'points'}
                     </p>
+                    {request.premium_duration_days && (
+                      <p className="mt-1 text-slate-500">
+                        {lang === 'ar' ? 'مدة الاشتراك: ' : 'Subscription duration: '}
+                        {request.premium_duration_days} {lang === 'ar' ? 'يوم' : 'days'}
+                      </p>
+                    )}
                     <p className="mt-1 text-[11px] text-slate-400 break-all">
                       {lang === 'ar' ? 'رقم العملية: ' : 'Reference: '}{request.transaction_reference}
                     </p>
@@ -1508,7 +1599,7 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
       {/* Discreet Version & Protected Admin Trigger */}
       <div className="pt-2 pb-6 text-center space-y-1">
         <p className="text-[11px] text-slate-400 dark:text-slate-500 font-mono-num">
-          فضفضة · الإصدار 3.10.5 (مستقر)
+          فضفضة · الإصدار 3.10.6 (مستقر)
         </p>
         {!isStaff && (
           <button
