@@ -44,8 +44,8 @@ export function getFirebaseAuthError(error: unknown): string {
 }
 
 export async function signInWithGoogleAndGetIdToken(): Promise<string> {
-  await FirebaseAuthentication.signInWithGoogle();
-  return getFirebaseIdToken();
+  await signInWithGoogle();
+  return getVerifiedEmailIdToken();
 }
 
 export async function signInWithEmailAndGetIdToken(
@@ -119,9 +119,9 @@ export async function signInGoogleForLinking(): Promise<string> {
   if (user) {
     await FirebaseAuthentication.linkWithGoogle();
   } else {
-    await FirebaseAuthentication.signInWithGoogle();
+    await signInWithGoogle();
   }
-  return getFirebaseIdToken();
+  return getVerifiedEmailIdToken();
 }
 
 export async function completeEmailLinkVerification(): Promise<string> {
@@ -134,11 +134,57 @@ async function getVerifiedEmailIdToken(): Promise<string> {
   if (!user?.emailVerified) {
     throw new Error('تحقق من بريدك الإلكتروني أولًا، ثم اضغط متابعة.');
   }
-  return getFirebaseIdToken();
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const token = await getFirebaseIdToken();
+    if (getEmailVerifiedClaim(token)) return token;
+    if (attempt < 4) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+    }
+  }
+
+  throw new Error('تم التحقق من البريد، لكن Firebase لم يحدّث رمز الدخول بعد. انتظر قليلًا ثم أعد المحاولة.');
 }
 
 async function getFirebaseIdToken(): Promise<string> {
   const { token } = await FirebaseAuthentication.getIdToken({ forceRefresh: true });
   if (!token) throw new Error('لم يتمكن Firebase من إصدار رمز دخول صالح.');
   return token;
+}
+
+function getEmailVerifiedClaim(token: string): boolean {
+  const encodedPayload = token.split('.')[1];
+  if (!encodedPayload) return false;
+
+  try {
+    const base64 = encodedPayload.replace(/-/g, '+').replace(/_/g, '/');
+    const binaryPayload = window.atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '='));
+    const bytes = Uint8Array.from(binaryPayload, (character) => character.charCodeAt(0));
+    const payload: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    return (
+      typeof payload === 'object' &&
+      payload !== null &&
+      'email_verified' in payload &&
+      payload.email_verified === true
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function signInWithGoogle(): Promise<void> {
+  try {
+    await FirebaseAuthentication.signInWithGoogle({ useCredentialManager: true });
+  } catch (error) {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String(error.code)
+        : '';
+    const message = error instanceof Error ? error.message : String(error);
+    if (code !== '16' && !/\[16\]\s*Account reauth failed/i.test(message)) {
+      throw error;
+    }
+
+    await FirebaseAuthentication.signInWithGoogle({ useCredentialManager: false });
+  }
 }

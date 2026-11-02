@@ -4,7 +4,15 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
-## 3.9.1 — قيد التجهيز | Preparing
+## 3.9.4 — إصلاحات تسجيل الدخول | Sign-in fixes
+
+### أُصلح
+
+- استعادة تسجيل Google عبر واجهة تسجيل الدخول التقليدية إذا فشل Credential Manager بخطأ إعادة التحقق `[16]` فقط.
+- انتظار تحديث مطالبة `email_verified` في رمز Firebase بعد إعادة تحميل حالة المستخدم، مع إبقاء تحقق الخادم إلزاميًا.
+- حفظ القيم الفارغة لحقول الملف الشخصي الاختيارية عند مسح الاهتمامات أو اللغات أو الصورة أو البلد.
+
+## 3.9.3 — تحسينات سابقة | Previous improvements
 
 ### أُضيف
 
@@ -17,5 +25,3 @@ User-facing changes are recorded here. A GitHub Release is published automatical
 - إيقاف مكافآت الإعلانات ونقاطها حتى إضافة تحقق آمن من AdMob على الخادم.
 - الإعلانات متوقفة افتراضيًا إلى أن تُضاف معرّفات AdMob الإنتاجية وتكتمل مراجعة التطبيق.
 - فصل بناء الاختبار عن مسار إصدار Android الموقّع.
-
-> هذا السجل لا يعني أن الإصدار الرسمي نُشر بعد. لن يُنشر إصدار قابل للتحديث إلا بعد إعداد مفتاح توقيع الإصدار في أسرار GitHub.
