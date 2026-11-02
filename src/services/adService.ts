@@ -11,6 +11,7 @@ import { showAdMobInterstitial } from './nativeAdMob';
 export interface AdConfig {
   enabled: boolean;
   banner_enabled: boolean;
+  chat_card_enabled: boolean;
   interstitial_enabled: boolean;
   rewarded_enabled: boolean;
   test_mode: boolean;
@@ -18,6 +19,7 @@ export interface AdConfig {
   adsense_publisher_id: string;
   adsense_banner_slot_id: string;
   monetag_zone_id: string;
+  chat_sponsor_url: string;
   custom_banner_code: string;
   rewarded_sponsor_url: string;
   admob_app_id: string;
@@ -31,6 +33,7 @@ export interface AdConfig {
 export const DEFAULT_AD_CONFIG: AdConfig = {
   enabled: true,
   banner_enabled: true,
+  chat_card_enabled: false,
   interstitial_enabled: true,
   rewarded_enabled: false,
   test_mode: true,
@@ -38,6 +41,7 @@ export const DEFAULT_AD_CONFIG: AdConfig = {
   adsense_publisher_id: '',
   adsense_banner_slot_id: '',
   monetag_zone_id: '',
+  chat_sponsor_url: 'https://uplcm.com/4/12175682',
   custom_banner_code: '',
   rewarded_sponsor_url: 'https://adsense.google.com',
   admob_app_id: 'ca-app-pub-3940256099942544~3347511713',
@@ -105,6 +109,15 @@ class AdService {
 
   shouldShowBanner(user?: RealmUser | null): boolean {
     return this.shouldShowAds(user) && this.config.banner_enabled;
+  }
+
+  shouldShowChatCard(user?: RealmUser | null): boolean {
+    if (!this.shouldShowAds(user) || !this.config.chat_card_enabled) return false;
+    try {
+      return new URL(this.config.chat_sponsor_url).protocol === 'https:';
+    } catch {
+      return false;
+    }
   }
 
   shouldShowRewarded(user?: RealmUser | null): boolean {

@@ -453,7 +453,7 @@ async function startServer() {
     res.json({
       ok: true,
       package: 'com.fadfadahnative',
-      version: '3.10.2',
+      version: '3.10.3',
       onlineUsers: activeSockets.size,
       totalRegisteredUsers: serverDB.users.size,
     });
@@ -2318,6 +2318,7 @@ async function startServer() {
     res.json({
       enabled: config.enabled,
       banner_enabled: config.banner_enabled,
+      chat_card_enabled: config.chat_card_enabled,
       interstitial_enabled: config.interstitial_enabled,
       rewarded_enabled: false,
       test_mode: config.test_mode,
@@ -2325,6 +2326,7 @@ async function startServer() {
       adsense_publisher_id: config.adsense_publisher_id || '',
       adsense_banner_slot_id: config.adsense_banner_slot_id || '',
       monetag_zone_id: config.monetag_zone_id || '',
+      chat_sponsor_url: config.chat_sponsor_url || '',
       custom_banner_code: config.custom_banner_code || '',
       rewarded_sponsor_url: config.rewarded_sponsor_url || '',
       admob_app_id: config.admob_app_id,
@@ -2405,7 +2407,23 @@ async function startServer() {
     res.json({ deleted: true });
   });
 
-  // Support clean /u/:slug share links redirecting smoothly into the SPA gateway (?u=slug)
+  app.get('/.well-known/assetlinks.json', (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.json([
+      {
+        relation: ['delegate_permission/common.handle_all_urls'],
+        target: {
+          namespace: 'android_app',
+          package_name: 'com.fadfadahnative',
+          sha256_cert_fingerprints: [
+            '75:50:A0:DA:1D:64:1D:45:B2:8C:87:EE:23:CF:80:8C:E4:F4:C6:64:2B:C0:30:B2:F6:36:7A:7B:14:DB:AC:9B',
+          ],
+        },
+      },
+    ]);
+  });
+
+  // Support clean /u/:slug share links in both browsers and verified Android App Links.
   app.get('/u/:slug', (req: Request, res: Response) => {
     res.redirect(302, `/?u=${encodeURIComponent(req.params.slug || '')}`);
   });
@@ -2416,6 +2434,7 @@ async function startServer() {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {
+        allowedHosts: ['fadfada.94.237.56.203.nip.io'],
         middlewareMode: true,
         watch: null,
       },

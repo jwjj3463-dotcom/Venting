@@ -4,6 +4,8 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
+import { App as CapApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import {
   MessageSquare,
   Compass,
@@ -40,6 +42,25 @@ import { adService } from './services/adService';
 import { TRANSLATIONS } from './i18n/translations';
 
 type PrimaryTab = 'chats' | 'match' | 'explore' | 'profile';
+
+const APP_LINK_HOST = new URL(
+  (import.meta.env.VITE_API_SERVER_URL as string | undefined) ||
+    'https://fadfada.94.237.56.203.nip.io'
+).hostname;
+
+function getSharedSlugFromUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.hostname !== APP_LINK_HOST) return null;
+    const pathMatch = url.pathname.match(/^\/u\/([^/]+)\/?$/);
+    const slug = pathMatch?.[1] || url.searchParams.get('u');
+    if (!slug) return null;
+    const decodedSlug = decodeURIComponent(slug);
+    return /^[A-Za-z0-9_-]+$/.test(decodedSlug) ? decodedSlug : null;
+  } catch {
+    return null;
+  }
+}
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -79,6 +100,28 @@ export default function App() {
     let cancelled = false;
     let unsubRealm = () => {};
     let unsubNet = () => {};
+    let appUrlListener: { remove: () => Promise<void> } | undefined;
+
+    if (Capacitor.isNativePlatform()) {
+      void CapApp.addListener('appUrlOpen', ({ url }) => {
+        const sharedSlug = getSharedSlugFromUrl(url);
+        if (sharedSlug) setGatewayTargetSlug(sharedSlug);
+      }).then((listener) => {
+        if (cancelled) {
+          void listener.remove();
+        } else {
+          appUrlListener = listener;
+        }
+      });
+
+      void CapApp.getLaunchUrl().then((launch) => {
+        if (cancelled || !launch?.url) return;
+        const sharedSlug = getSharedSlugFromUrl(launch.url);
+        if (sharedSlug) setGatewayTargetSlug(sharedSlug);
+      }).catch((error: unknown) => {
+        console.error('Failed to read the Android launch URL:', error);
+      });
+    }
 
     const bootstrap = async () => {
       try {
@@ -136,6 +179,7 @@ export default function App() {
       cancelled = true;
       unsubRealm();
       unsubNet();
+      if (appUrlListener) void appUrlListener.remove();
       cleanupBack();
     };
   }, [bootAttempt]);

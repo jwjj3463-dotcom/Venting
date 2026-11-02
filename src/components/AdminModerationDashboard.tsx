@@ -1336,6 +1336,32 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
                 </div>
               )}
 
+              <section className="rounded-2xl bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900/40 p-4 space-y-3">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                    {lang === 'ar' ? 'بطاقة Monetag بين المحادثات' : 'Monetag Sponsored Chat Card'}
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    {lang === 'ar'
+                      ? 'تظهر بطاقة واحدة موسومة كإعلان بين المحادثات المقبولة. الضغط يفتح SmartLink في المتصفح، ولا يمنح نقاطًا.'
+                      : 'Shows one clearly labeled sponsored card between accepted chats. Clicking opens the SmartLink; it does not award points.'}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    {lang === 'ar' ? 'رابط Monetag SmartLink' : 'Monetag SmartLink URL'}
+                  </label>
+                  <input
+                    type="url"
+                    value={adConfig.chat_sponsor_url || ''}
+                    onChange={(e) => setAdConfig({ ...adConfig, chat_sponsor_url: e.target.value })}
+                    placeholder="https://uplcm.com/4/..."
+                    dir="ltr"
+                    className="w-full h-11 px-3.5 rounded-xl bg-white dark:bg-[#151221] border border-slate-200 dark:border-white/10 text-xs font-mono text-slate-900 dark:text-white"
+                  />
+                </div>
+              </section>
+
               {/* Toggles */}
               <h4 className="text-sm font-bold text-slate-900 dark:text-white pb-2 border-b border-slate-100 dark:border-white/10">
                 {lang === 'ar' ? 'مفاتيح التفعيل والتعطيل' : 'Feature Toggles'}
@@ -1355,6 +1381,23 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
                     type="checkbox"
                     checked={adConfig.enabled}
                     onChange={(e) => setAdConfig({ ...adConfig, enabled: e.target.checked })}
+                    className="w-5 h-5 accent-[#8B5CF6] rounded"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 dark:bg-[#151221] border border-slate-200 dark:border-white/10 cursor-pointer">
+                  <div className="space-y-0.5">
+                    <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                      {lang === 'ar' ? 'بطاقة إعلان بين المحادثات' : 'Sponsored Chat Card'}
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      {lang === 'ar' ? 'تظهر للمستخدمين غير المشتركين فقط عند وجود محادثات' : 'Shown to non-premium users when chats are available'}
+                    </span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={adConfig.chat_card_enabled}
+                    onChange={(e) => setAdConfig({ ...adConfig, chat_card_enabled: e.target.checked })}
                     className="w-5 h-5 accent-[#8B5CF6] rounded"
                   />
                 </label>
@@ -1399,7 +1442,9 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
                       {lang === 'ar' ? 'إعلانات الفيديو بمكافأة (متوقفة)' : 'Rewarded Video Ads (disabled)'}
                     </span>
                     <span className="text-[11px] text-slate-500">
-                      {lang === 'ar' ? 'تتطلب التحقق الآمن من AdMob قبل منح النقاط' : 'Requires secure AdMob verification before points can be awarded'}
+                      {lang === 'ar'
+                        ? 'رابط Monetag لا يثبت إكمال الإعلان؛ لا تُمنح نقاط قبل توفر تحقق موثوق من السيرفر'
+                        : 'Monetag SmartLinks cannot verify completion; rewards stay disabled until server-side verification is available'}
                     </span>
                   </div>
                   <input

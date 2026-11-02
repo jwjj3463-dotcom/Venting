@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   Copy,
   Check,
@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   XCircle,
   Crown,
+  Megaphone,
 } from 'lucide-react';
 import { FramedAvatar, OfficialBadge } from './FramedAvatar';
 import {
@@ -15,9 +16,10 @@ import {
   RealmUser,
 } from '../db/realmLocalDB';
 import { fadfadahClient } from '../services/fadfadahNetworkClient';
-import { nativeCopyText, nativeShareUrl } from '../services/androidNative';
+import { nativeCopyText, nativeShareUrl, openExternalUrl } from '../services/androidNative';
 import { AppLang, TRANSLATIONS } from '../i18n/translations';
 import { AdBanner } from './AdBanner';
+import { adService, AdConfig } from '../services/adService';
 
 interface UnifiedInboxScreenProps {
   selfUser: RealmUser;
@@ -45,6 +47,12 @@ export const UnifiedInboxScreen: React.FC<UnifiedInboxScreenProps> = ({
   const t = TRANSLATIONS[lang];
   const [activeInboxTab, setActiveInboxTab] = useState<'LINK_BASED' | 'RANDOM'>('LINK_BASED');
   const [copiedLink, setCopiedLink] = useState(false);
+  const [adConfig, setAdConfig] = useState<AdConfig>(() => adService.getConfig());
+  const [adOpenError, setAdOpenError] = useState(false);
+
+  useEffect(() => {
+    return adService.subscribe(() => setAdConfig(adService.getConfig()));
+  }, []);
 
   const shareableUrl = `${fadfadahClient.getShareBaseUrl()}/u/${encodeURIComponent(
     personalLink.slug
@@ -105,6 +113,16 @@ export const UnifiedInboxScreen: React.FC<UnifiedInboxScreenProps> = ({
     });
     if (!shared) {
       await handleCopyLink();
+    }
+  };
+
+  const handleOpenSponsoredLink = async () => {
+    setAdOpenError(false);
+    try {
+      await openExternalUrl(adConfig.chat_sponsor_url);
+    } catch (error) {
+      console.error('Failed to open sponsored ad link:', error);
+      setAdOpenError(true);
     }
   };
 
@@ -336,55 +354,84 @@ export const UnifiedInboxScreen: React.FC<UnifiedInboxScreenProps> = ({
               {activeInboxTab === 'LINK_BASED' ? t.noLinkChats : t.noRandomChats}
             </div>
           ) : (
-            (activeInboxTab === 'LINK_BASED' ? linkRooms : acceptedRandomRooms).map((room) => {
+            (activeInboxTab === 'LINK_BASED' ? linkRooms : acceptedRandomRooms).map((room, index) => {
               const peer = resolvePeer(room);
               const isSelected = activeRoomId === room.id;
               return (
-                <button
-                  key={room.id}
-                  type="button"
-                  onClick={() => onSelectRoom(room.id)}
-                  className={`w-full px-4 py-3.5 min-h-[68px] flex items-center justify-between gap-3 text-right transition-colors ${
-                    isSelected
-                      ? 'bg-[#8B5CF6]/12 dark:bg-[#8B5CF6]/18'
-                      : 'active:bg-slate-100 dark:active:bg-white/5'
-                  }`}
-                >
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <FramedAvatar
-                      avatarUrl={peer.avatar_url}
-                      frameId={peer.frame_id}
-                      nickname={peer.nickname}
-                      size="md"
-                    />
-                    <div className="min-w-0 flex-1 text-start">
-                      <h4 className="flex items-center gap-1 text-sm font-bold text-slate-900 dark:text-white">
-                        <span className="truncate">{peer.nickname}</span>
-                        <OfficialBadge role={peer.role} />
-                      </h4>
-                      <p
-                        className={`text-xs truncate mt-0.5 ${
-                          room.unread_count > 0
-                            ? 'font-semibold text-slate-900 dark:text-slate-100'
-                            : 'text-slate-500 dark:text-slate-400'
-                        }`}
-                      >
-                        {room.last_message_preview}
-                      </p>
+                <Fragment key={room.id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelectRoom(room.id)}
+                    className={`w-full px-4 py-3.5 min-h-[68px] flex items-center justify-between gap-3 text-right transition-colors ${
+                      isSelected
+                        ? 'bg-[#8B5CF6]/12 dark:bg-[#8B5CF6]/18'
+                        : 'active:bg-slate-100 dark:active:bg-white/5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <FramedAvatar
+                        avatarUrl={peer.avatar_url}
+                        frameId={peer.frame_id}
+                        nickname={peer.nickname}
+                        size="md"
+                      />
+                      <div className="min-w-0 flex-1 text-start">
+                        <h4 className="flex items-center gap-1 text-sm font-bold text-slate-900 dark:text-white">
+                          <span className="truncate">{peer.nickname}</span>
+                          <OfficialBadge role={peer.role} />
+                        </h4>
+                        <p
+                          className={`text-xs truncate mt-0.5 ${
+                            room.unread_count > 0
+                              ? 'font-semibold text-slate-900 dark:text-slate-100'
+                              : 'text-slate-500 dark:text-slate-400'
+                          }`}
+                        >
+                          {room.last_message_preview}
+                        </p>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="flex flex-col items-end gap-1.5 shrink-0">
-                    <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono-num">
-                      {formatRowTime(room.last_message_at)}
-                    </span>
-                    {room.unread_count > 0 && (
-                      <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#8B5CF6] text-white text-[11px] font-mono-num font-bold flex items-center justify-center">
-                        {room.unread_count}
+                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono-num">
+                        {formatRowTime(room.last_message_at)}
                       </span>
-                    )}
-                  </div>
-                </button>
+                      {room.unread_count > 0 && (
+                        <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#8B5CF6] text-white text-[11px] font-mono-num font-bold flex items-center justify-center">
+                          {room.unread_count}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                  {index === 0 && activeInboxTab === 'LINK_BASED' && adService.shouldShowChatCard(selfUser) && (
+                    <div className="px-3 py-2 border-y border-[#8B5CF6]/15 bg-purple-50/60 dark:bg-[#191528]">
+                      <button
+                        type="button"
+                        onClick={handleOpenSponsoredLink}
+                        className="w-full min-h-[56px] px-3 py-2 rounded-xl border border-[#8B5CF6]/25 bg-white dark:bg-[#211c30] flex items-center gap-3 text-start active:scale-[0.99] transition-transform"
+                        aria-label={lang === 'ar' ? 'فتح إعلان برعاية Monetag' : 'Open sponsored advertisement'}
+                      >
+                        <span className="w-9 h-9 rounded-xl bg-[#8B5CF6]/10 text-[#8B5CF6] flex items-center justify-center shrink-0">
+                          <Megaphone className="w-4 h-4" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[9px] text-[#8B5CF6] font-semibold">
+                            {lang === 'ar' ? 'إعلان برعاية' : 'Sponsored'}
+                          </span>
+                          <span className="block text-xs font-bold text-slate-900 dark:text-white">
+                            {lang === 'ar' ? 'اكتشف عرضًا قد يهمك' : 'Discover an offer'}
+                          </span>
+                          {adOpenError && (
+                            <span className="block text-[10px] text-rose-600" role="alert">
+                              {lang === 'ar' ? 'تعذر فتح الإعلان. حاول مرة أخرى.' : 'Could not open the ad. Try again.'}
+                            </span>
+                          )}
+                        </span>
+                        <ExternalLink className="w-4 h-4 text-slate-400 shrink-0" />
+                      </button>
+                    </div>
+                  )}
+                </Fragment>
               );
             })
           )}

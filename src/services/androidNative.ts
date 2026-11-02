@@ -88,3 +88,12 @@ export async function nativeShareUrl(params: {
     return false;
   }
 }
+
+export async function openExternalUrl(url: string): Promise<void> {
+  const parsedUrl = new URL(url);
+  if (parsedUrl.protocol !== 'https:') {
+    throw new Error('Only HTTPS external links are allowed.');
+  }
+  const { Browser } = await import('@capacitor/browser');
+  await Browser.open({ url: parsedUrl.toString() });
+}
