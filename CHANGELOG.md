@@ -4,6 +4,15 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.9.8 — إصلاح الحفظ وملاحظات التحديث | Profile save and update notes fix
+
+### أُصلح
+
+- ضغط صور الملف الشخصي قبل إرسالها، لتجنب رفض طلب الحفظ بسبب حد حجم الطلب في الخادم الوسيط.
+- عرض رسائل خطأ حفظ الملف الشخصي بوضوح بدل تنسيقها كرسائل نجاح.
+- عرض ملاحظات التحديث من سجل التغييرات بالعربية، مع إزالة علامات Markdown والرموز الخام.
+- الإبقاء على إصلاح تسجيل Google المرتبط بشهادة إصدار Android والتحقق منه في بناء GitHub.
+
 ## 3.9.7 — إصلاح تسجيل Google في إصدار Android | Android Google sign-in fix
 
 ### أُصلح

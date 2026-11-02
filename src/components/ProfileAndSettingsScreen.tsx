@@ -51,6 +51,37 @@ import {
   TRANSLATIONS,
 } from '../i18n/translations';
 
+const PROFILE_AVATAR_REQUEST_LIMIT = 700_000;
+
+async function prepareAvatarForRequest(avatarUrl: string): Promise<string> {
+  if (!avatarUrl.startsWith('data:image/') || avatarUrl.length <= PROFILE_AVATAR_REQUEST_LIMIT) {
+    return avatarUrl;
+  }
+
+  const image = new Image();
+  image.src = avatarUrl;
+  await image.decode();
+
+  const canvas = document.createElement('canvas');
+  const scale = Math.min(1, 512 / Math.max(image.naturalWidth, image.naturalHeight));
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('تعذر تجهيز الصورة للحفظ.');
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+  for (const quality of [0.82, 0.7, 0.58, 0.46]) {
+    const webp = canvas.toDataURL('image/webp', quality);
+    const compactImage = webp.startsWith('data:image/webp')
+      ? webp
+      : canvas.toDataURL('image/jpeg', quality);
+    if (compactImage.length <= PROFILE_AVATAR_REQUEST_LIMIT) return compactImage;
+  }
+
+  throw new Error('تعذر ضغط الصورة إلى حجم مناسب. اختر صورة أصغر.');
+}
+
 interface ProfileAndSettingsScreenProps {
   selfUser: RealmUser;
   personalLink: RealmPersonalLink;
@@ -90,6 +121,7 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
   const [savingServerUrl, setSavingServerUrl] = useState(false);
 
   const [saveToast, setSaveToast] = useState('');
+  const [profileSaveError, setProfileSaveError] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [copiedCmd, setCopiedCmd] = useState(false);
@@ -195,26 +227,37 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingProfile(true);
+    setProfileSaveError('');
     try {
+      const requestAvatarUrl = await prepareAvatarForRequest(avatarUrl);
+      if (requestAvatarUrl !== avatarUrl) setAvatarUrl(requestAvatarUrl);
       const res = await fadfadahClient.updateProfile({
         nickname: nickname.trim() || selfUser.nickname,
         slug: slug.trim() || personalLink.slug,
         country,
         bio: bio.trim(),
-        avatar_url: avatarUrl,
+        avatar_url: requestAvatarUrl,
         frame_id: frameId,
         interests,
         languages,
       });
 
       if (!res.ok) {
-        setSaveToast(res.error || (lang === 'ar' ? 'تعذر الحفظ.' : 'Save failed.'));
+        setProfileSaveError(res.error || (lang === 'ar' ? 'تعذر الحفظ.' : 'Save failed.'));
         return;
       }
       const updatedLink = realmDB.findPersonalLink();
       if (updatedLink) setSlug(updatedLink.slug);
       setSaveToast(t.savedSuccess);
       setTimeout(() => setSaveToast(''), 2600);
+    } catch (error) {
+      setProfileSaveError(
+        error instanceof Error
+          ? error.message
+          : lang === 'ar'
+            ? 'تعذر تجهيز بيانات الملف الشخصي للحفظ.'
+            : 'Could not prepare your profile for saving.'
+      );
     } finally {
       setSavingProfile(false);
     }
@@ -926,11 +969,15 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
             : t.saveProfile}
         </button>
 
-        {saveToast && (
+        {profileSaveError ? (
+          <p role="alert" className="text-center text-xs font-semibold text-red-600 dark:text-red-400">
+            {profileSaveError}
+          </p>
+        ) : saveToast ? (
           <p className="text-center text-xs font-semibold text-emerald-600 dark:text-emerald-400">
             {saveToast}
           </p>
-        )}
+        ) : null}
       </form>
 
       {/* Native Android Settings Rows */}

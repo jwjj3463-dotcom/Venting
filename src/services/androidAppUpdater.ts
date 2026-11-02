@@ -1,5 +1,6 @@
 import { App } from '@capacitor/app';
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { formatReleaseNotes } from './releaseNotes';
 
 interface AndroidApkUpdaterPlugin {
   canInstallPackages(): Promise<{ canInstall: boolean }>;
@@ -89,7 +90,10 @@ export async function checkForAndroidAppUpdate(): Promise<AndroidAppUpdate | nul
   return {
     tag: release.tag_name,
     version,
-    notes: 'body' in release && typeof release.body === 'string' ? release.body : '',
+    notes:
+      'body' in release && typeof release.body === 'string'
+        ? formatReleaseNotes(release.body)
+        : '',
     apkUrl: apk.browser_download_url,
   };
 }
