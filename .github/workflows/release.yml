@@ -94,6 +94,35 @@ jobs:
           rm -f "$RUNNER_TEMP/fadfadah-signing-check.csr"
           echo "Android release keystore and private key verified."
 
+      - name: Verify Firebase Google OAuth signing certificate
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          release_sha1="$(keytool -exportcert \
+            -keystore "$RUNNER_TEMP/fadfadah-upload-key.p12" \
+            -storetype PKCS12 \
+            -storepass:env ANDROID_KEYSTORE_PASSWORD \
+            -alias "$ANDROID_KEY_ALIAS" | sha1sum | cut -d ' ' -f 1)"
+          node --input-type=module - "$release_sha1" <<'NODE'
+          import fs from 'node:fs';
+
+          const releaseSha1 = process.argv[2]?.replaceAll(':', '').toLowerCase();
+          const firebaseConfig = JSON.parse(fs.readFileSync('google-services.json', 'utf8'));
+          const configuredSha1s = firebaseConfig.client.flatMap((client) =>
+            (client.oauth_client ?? [])
+              .filter((oauthClient) => oauthClient.client_type === 1)
+              .map((oauthClient) => oauthClient.android_info?.certificate_hash?.replaceAll(':', '').toLowerCase())
+              .filter(Boolean)
+          );
+
+          if (!releaseSha1 || !configuredSha1s.includes(releaseSha1)) {
+            throw new Error('Firebase Google OAuth config does not include the release signing certificate SHA-1.');
+          }
+
+          console.log('Firebase Google OAuth config matches the release signing certificate.');
+          NODE
+
       - name: Build signed APK and Google Play bundle
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}

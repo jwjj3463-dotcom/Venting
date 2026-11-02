@@ -14,11 +14,35 @@
       },
       "oauth_client": [
         {
+          "client_id": "1052135859886-44gmrgm9tv1icjvg9nkdnamej121rqgp.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.fadfadahnative",
+            "certificate_hash": "0dc04746e68d7a3f9771fa106ff91f62c184f0f0"
+          }
+        },
+        {
+          "client_id": "1052135859886-53orrv49je36gps3si5t6b0bmd1ibvjd.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.fadfadahnative",
+            "certificate_hash": "967ab18bb3bcd78431a3c085fcb389f32544ca52"
+          }
+        },
+        {
           "client_id": "1052135859886-fe24alqrm2m69q6oibfdduhqp0jj0q4a.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.fadfadahnative",
             "certificate_hash": "c0edc6b8e7d74afbacdd764c2a52f81ecc1295d8"
+          }
+        },
+        {
+          "client_id": "1052135859886-p85npm4kuc8vmnj6o853bavc9m727sji.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.fadfadahnative",
+            "certificate_hash": "565126e6e7d8b7e3b26d239f2e0faf2484bf6fc9"
           }
         },
         {

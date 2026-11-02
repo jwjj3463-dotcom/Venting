@@ -4,6 +4,13 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.9.6 — إصلاح إعداد تسجيل Google | Google sign-in configuration fix
+
+### أُصلح
+
+- تحديث إعداد Firebase ليشمل عملاء OAuth لشهادات Android المسجلة، بما فيها شهادة APK المستقر.
+- التحقق تلقائيًا أثناء بناء الإصدار من تطابق بصمة شهادة التوقيع مع إعداد OAuth المضمّن.
+
 ## 3.9.5 — إصلاح التحقق من البريد | Email verification fix
 
 ### أُصلح
