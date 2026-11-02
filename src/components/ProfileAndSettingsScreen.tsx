@@ -31,6 +31,7 @@ import {
   PROFILE_FRAMES,
 } from './FramedAvatar';
 import {
+  generateUUID,
   FADFADAH_REALM_SCHEMAS,
   PremiumPlan,
   realmDB,
@@ -39,7 +40,11 @@ import {
   RealmPersonalLink,
   RealmUser,
 } from '../db/realmLocalDB';
-import { fadfadahClient } from '../services/fadfadahNetworkClient';
+import {
+  fadfadahClient,
+  ManualTopupConfigDTO,
+  ManualTopupRequestDTO,
+} from '../services/fadfadahNetworkClient';
 import { nativeCopyText } from '../services/androidNative';
 import { AdminModerationDashboard } from './AdminModerationDashboard';
 import { adService } from '../services/adService';
@@ -137,6 +142,17 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
   const [transactions, setTransactions] = useState<RealmPaymentTransaction[]>(() =>
     realmDB.objects('payment_transactions').sort((a, b) => b.created_at - a.created_at)
   );
+  const [manualTopupConfig, setManualTopupConfig] = useState<ManualTopupConfigDTO>({
+    packages: [],
+    payment_methods: [],
+  });
+  const [manualTopupRequests, setManualTopupRequests] = useState<ManualTopupRequestDTO[]>([]);
+  const [selectedTopupPackage, setSelectedTopupPackage] = useState('');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');
+  const [transactionReference, setTransactionReference] = useState('');
+  const [paymentProof, setPaymentProof] = useState('');
+  const [submittingTopup, setSubmittingTopup] = useState(false);
+  const topupIdempotencyKey = useRef(generateUUID());
 
   const avatarUploadRef = useRef<HTMLInputElement | null>(null);
 
@@ -155,6 +171,38 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
     }
     return unsub;
   }, []);
+
+  useEffect(() => {
+    if (subView !== 'monetization') return;
+    let cancelled = false;
+    void Promise.all([
+      fadfadahClient.getManualTopupConfig(),
+      fadfadahClient.getManualTopupRequests(),
+    ])
+      .then(([config, requests]) => {
+        if (cancelled) return;
+        setManualTopupConfig(config);
+        setManualTopupRequests(requests);
+        setSelectedTopupPackage((current) =>
+          config.packages.some((pack) => pack.id === current) ? current : config.packages[0]?.id || ''
+        );
+        setSelectedPaymentMethod((current) =>
+          config.payment_methods.some((method) => method.id === current)
+            ? current
+            : config.payment_methods[0]?.id || ''
+        );
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setSaveToast(
+            error instanceof Error ? error.message : 'تعذر تحميل بيانات الشحن اليدوي.'
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [subView]);
 
   const toggleInterest = (item: string) => {
     setInterests((prev) =>
@@ -282,22 +330,67 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
     setTimeout(() => setSaveToast(''), 3000);
   };
 
-  const handleCheckoutPoints = async (packKey: string) => {
-    setSaveToast(lang === 'ar' ? 'جارٍ التحقق من عملية الشحن في السيرفر...' : 'Verifying pack purchase...');
-    const res = await fadfadahClient.checkoutPackage({
-      type: 'POINTS_PACK',
-      packageId: packKey,
-    });
-    if (!res.ok) {
-      setSaveToast(res.error || 'فشلت عملية الشحن.');
+  const handleManualTopupProofUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setSaveToast(lang === 'ar' ? 'اختر صورة بصيغة JPG أو PNG أو WebP.' : 'Choose a JPG, PNG, or WebP image.');
+      e.target.value = '';
       return;
     }
+    if (file.size > 2 * 1024 * 1024) {
+      setSaveToast(lang === 'ar' ? 'حجم الإثبات يجب ألا يتجاوز 2 ميجابايت.' : 'Proof image must not exceed 2 MB.');
+      e.target.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setPaymentProof(String(reader.result || ''));
+    reader.onerror = () => setSaveToast(lang === 'ar' ? 'تعذرت قراءة صورة الإثبات.' : 'Could not read the proof image.');
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleSubmitManualTopup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (submittingTopup) return;
+    setSubmittingTopup(true);
+    setSaveToast('');
+    const result = await fadfadahClient.createManualTopupRequest({
+      packageId: selectedTopupPackage,
+      paymentMethodId: selectedPaymentMethod,
+      transactionReference,
+      proofDataUrl: paymentProof,
+      idempotencyKey: topupIdempotencyKey.current,
+    });
+    setSubmittingTopup(false);
+    if (!result.ok || !result.request) {
+      const error = result.error || '';
+      const message =
+        error === 'TRANSACTION_REFERENCE_ALREADY_USED'
+          ? lang === 'ar'
+            ? 'رقم العملية مستخدم في طلب آخر.'
+            : 'This transaction reference is already used.'
+          : error === 'INVALID_PAYMENT_PROOF'
+            ? lang === 'ar'
+              ? 'ملف الإثبات غير صالح أو أكبر من الحد المسموح.'
+              : 'The proof image is invalid or exceeds the size limit.'
+            : error === 'INVALID_PACKAGE_OR_PAYMENT_METHOD'
+              ? lang === 'ar'
+                ? 'الباقة أو وسيلة الدفع لم تعد متاحة. حدّث الصفحة وحاول مجددًا.'
+                : 'The selected package or payment method is no longer available. Refresh and retry.'
+              : error || (lang === 'ar' ? 'تعذر إرسال طلب الشحن.' : 'Could not submit the top-up request.');
+      setSaveToast(message);
+      return;
+    }
+    setManualTopupRequests((requests) => [result.request!, ...requests]);
+    setTransactionReference('');
+    setPaymentProof('');
+    topupIdempotencyKey.current = generateUUID();
     setSaveToast(
       lang === 'ar'
-        ? 'تمت إضافة النقاط وتوثيق المعاملة بنجاح في السيرفر!'
-        : 'Points credited and verified!'
+        ? 'تم إرسال طلب الشحن إلى الإدارة، وسيبقى قيد المراجعة.'
+        : 'Top-up request sent and is pending review.'
     );
-    setTimeout(() => setSaveToast(''), 3000);
   };
 
   const handleSaveServerEndpoint = async (e: React.FormEvent) => {
@@ -448,37 +541,193 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
           </div>
         </div>
 
-        {/* Verified Points Packs */}
+        {/* Server-verified manual wallet top-ups */}
         <div className="rounded-3xl bg-white dark:bg-[#1E1B2E] border border-slate-200 dark:border-white/10 p-6 space-y-4">
           <div className="flex items-center gap-2">
             <Coins className="w-5 h-5 text-amber-500" />
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              {lang === 'ar' ? 'شحن رصيد النقاط المؤكد' : 'Verified Point Packs'}
+              {lang === 'ar' ? 'شحن رصيد يدوي' : 'Manual wallet top-up'}
             </h3>
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
             {lang === 'ar'
-              ? 'تتم معالجة وتوثيق كل عملية شحن على السيرفر برقم طلب رسمي لمنع أي تكرار أو تلاعب.'
-              : 'Transactions are authenticated on the server with unique order IDs to prevent replay or forgery.'}
+              ? 'اختر باقة ووسيلة دفع، ثم أرفق رقم العملية وصورة الإثبات. لن تضاف النقاط إلا بعد مراجعة التحويل من الإدارة.'
+              : 'Choose a package and payment method, then provide the transfer reference and proof. Points are added only after admin review.'}
           </p>
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { id: 'pts_150', pts: 150, label: '$0.99' },
-              { id: 'pts_500', pts: 500, label: '$2.49' },
-              { id: 'pts_1200', pts: 1200, label: '$4.99' },
-            ].map((pack) => (
+
+          {manualTopupConfig.packages.length === 0 || manualTopupConfig.payment_methods.length === 0 ? (
+            <div className="rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 p-4 text-xs leading-relaxed text-amber-900 dark:text-amber-200">
+              {lang === 'ar'
+                ? 'الشحن غير متاح حاليًا. سيظهر هنا بعد أن يضيف المالك باقات الشحن وبيانات التحويل من لوحة الإدارة.'
+                : 'Top-ups are not available yet. The owner must configure packages and payment instructions in the admin panel.'}
+            </div>
+          ) : (
+            <form onSubmit={handleSubmitManualTopup} className="space-y-4">
+              <label className="block space-y-1.5">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                  {lang === 'ar' ? 'باقة الشحن' : 'Top-up package'}
+                </span>
+                <select
+                  value={selectedTopupPackage}
+                  onChange={(e) => setSelectedTopupPackage(e.target.value)}
+                  className="w-full min-h-[46px] rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#151221] px-3 text-sm"
+                  required
+                >
+                  {manualTopupConfig.packages.map((pack) => (
+                    <option key={pack.id} value={pack.id}>
+                      {lang === 'ar' ? pack.title_ar : pack.title_en} — {pack.points} {lang === 'ar' ? 'نقطة' : 'points'} · {pack.amount} {pack.currency}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block space-y-1.5">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                  {lang === 'ar' ? 'وسيلة الدفع' : 'Payment method'}
+                </span>
+                <select
+                  value={selectedPaymentMethod}
+                  onChange={(e) => setSelectedPaymentMethod(e.target.value)}
+                  className="w-full min-h-[46px] rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#151221] px-3 text-sm"
+                  required
+                >
+                  {manualTopupConfig.payment_methods.map((method) => (
+                    <option key={method.id} value={method.id}>
+                      {lang === 'ar' ? method.title_ar : method.title_en}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {(() => {
+                const method = manualTopupConfig.payment_methods.find(
+                  (item) => item.id === selectedPaymentMethod
+                );
+                const pack = manualTopupConfig.packages.find(
+                  (item) => item.id === selectedTopupPackage
+                );
+                return (
+                  <>
+                    {method && (
+                      <div className="rounded-2xl bg-[#2D1B69]/5 dark:bg-[#8B5CF6]/10 border border-[#8B5CF6]/20 p-4 space-y-2">
+                        <p className="text-xs font-bold text-[#8B5CF6]">
+                          {lang === 'ar' ? method.title_ar : method.title_en}
+                        </p>
+                        <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-700 dark:text-slate-200">
+                          {lang === 'ar' ? method.instructions_ar : method.instructions_en}
+                        </p>
+                      </div>
+                    )}
+                    {pack && (
+                      <div className="rounded-xl bg-slate-50 dark:bg-[#151221] p-3 flex justify-between text-xs">
+                        <span className="text-slate-500">{lang === 'ar' ? 'المطلوب تحويله' : 'Transfer amount'}</span>
+                        <strong className="font-mono-num text-slate-900 dark:text-white">{pack.amount} {pack.currency}</strong>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+
+              <label className="block space-y-1.5">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                  {lang === 'ar' ? 'رقم العملية / مرجع التحويل' : 'Transaction reference'}
+                </span>
+                <input
+                  value={transactionReference}
+                  onChange={(e) => setTransactionReference(e.target.value)}
+                  maxLength={100}
+                  minLength={3}
+                  required
+                  className="w-full min-h-[46px] rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#151221] px-3 text-sm"
+                />
+              </label>
+
+              <label className="block space-y-1.5">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                  {lang === 'ar' ? 'صورة إثبات الدفع (حتى 2 ميجابايت)' : 'Payment proof image (up to 2 MB)'}
+                </span>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={handleManualTopupProofUpload}
+                  required={!paymentProof}
+                  className="w-full text-xs text-slate-500 file:me-3 file:min-h-[40px] file:px-3 file:rounded-xl file:border-0 file:bg-slate-100 dark:file:bg-white/10 file:text-slate-700 dark:file:text-slate-200"
+                />
+              </label>
+              {paymentProof && (
+                <img
+                  src={paymentProof}
+                  alt={lang === 'ar' ? 'معاينة إثبات التحويل' : 'Transfer proof preview'}
+                  className="max-h-48 rounded-xl border border-slate-200 dark:border-white/10 object-contain"
+                />
+              )}
               <button
-                key={pack.id}
-                type="button"
-                onClick={() => handleCheckoutPoints(pack.id)}
-                className="min-h-[64px] p-3 rounded-2xl bg-slate-50 dark:bg-[#151221] active:border-[#8B5CF6] border border-slate-200 dark:border-white/10 text-center space-y-1 transition-colors"
+                type="submit"
+                disabled={
+                  submittingTopup ||
+                  !selectedTopupPackage ||
+                  !selectedPaymentMethod ||
+                  transactionReference.trim().length < 3 ||
+                  !paymentProof
+                }
+                className="w-full min-h-[48px] rounded-xl bg-[#8B5CF6] disabled:opacity-50 text-white text-sm font-bold"
               >
-                <p className="text-sm font-bold font-mono-num text-[#8B5CF6]">+{pack.pts}</p>
-                <p className="text-xs text-slate-600 dark:text-slate-400 font-mono-num">{pack.label}</p>
+                {submittingTopup
+                  ? lang === 'ar'
+                    ? 'جارٍ إرسال الطلب...'
+                    : 'Submitting...'
+                  : lang === 'ar'
+                    ? 'إرسال طلب الشحن للمراجعة'
+                    : 'Submit top-up request'}
               </button>
-            ))}
-          </div>
+            </form>
+          )}
         </div>
+
+        {manualTopupRequests.length > 0 && (
+          <div className="rounded-3xl bg-white dark:bg-[#1E1B2E] border border-slate-200 dark:border-white/10 p-6 space-y-3">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              {lang === 'ar' ? 'طلبات الشحن' : 'Top-up requests'}
+            </h3>
+            <div className="divide-y divide-slate-100 dark:divide-white/10">
+              {manualTopupRequests.map((request) => (
+                <div key={request.id} className="py-3 flex items-start justify-between gap-3 text-xs">
+                  <div className="min-w-0">
+                    <p className="font-bold text-slate-900 dark:text-white">
+                      {lang === 'ar' ? request.package_title_ar : request.package_title_en}
+                    </p>
+                    <p className="mt-1 text-slate-500 font-mono-num">
+                      {request.amount} {request.currency} · {request.points} {lang === 'ar' ? 'نقطة' : 'points'}
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-400 break-all">
+                      {lang === 'ar' ? 'رقم العملية: ' : 'Reference: '}{request.transaction_reference}
+                    </p>
+                    {request.rejection_reason && (
+                      <p className="mt-1 text-rose-600 dark:text-rose-300">
+                        {lang === 'ar' ? 'سبب الرفض: ' : 'Rejection reason: '}{request.rejection_reason}
+                      </p>
+                    )}
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                      request.status === 'APPROVED'
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                        : request.status === 'REJECTED'
+                          ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
+                          : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                    }`}
+                  >
+                    {request.status === 'PENDING'
+                      ? lang === 'ar' ? 'قيد المراجعة' : 'Pending'
+                      : request.status === 'APPROVED'
+                        ? lang === 'ar' ? 'مقبول' : 'Approved'
+                        : lang === 'ar' ? 'مرفوض' : 'Rejected'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Real User Financial Ledger History */}
         <div className="rounded-3xl bg-white dark:bg-[#1E1B2E] border border-slate-200 dark:border-white/10 p-6 space-y-3">
@@ -502,6 +751,9 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
                     </p>
                   </div>
                   <div className="text-end">
+                    {tx.amount_currency && (
+                      <span className="block text-[10px] text-slate-500 font-mono-num">{tx.amount_currency}</span>
+                    )}
                     <span className="font-mono-num font-bold text-emerald-600 dark:text-emerald-400 block">
                       {tx.amount_usd > 0 ? `$${tx.amount_usd}` : `${tx.points_delta} pts`}
                     </span>

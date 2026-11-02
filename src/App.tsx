@@ -53,6 +53,11 @@ export default function App() {
   const [ownerRecoveryBusy, setOwnerRecoveryBusy] = useState(false);
   const [bootAttempt, setBootAttempt] = useState(0);
   const [tick, setTick] = useState(0);
+  const [walletNotice, setWalletNotice] = useState<{
+    status: 'APPROVED' | 'REJECTED';
+    points: number;
+    reason: string;
+  } | null>(null);
 
   const [activeTab, setActiveTab] = useState<PrimaryTab>('chats');
   const [profileSubSection, setProfileSubSection] = useState<
@@ -82,6 +87,8 @@ export default function App() {
         unsubRealm = realmDB.addListener(() => setTick((v) => v + 1));
         unsubNet = fadfadahClient.subscribe(() => {
           setTick((v) => v + 1);
+          const notice = fadfadahClient.takeWalletNotice();
+          if (notice) setWalletNotice(notice);
           if (!realmDB.getSettings().auth_token) {
             setAccountAccessRequired(true);
           }
@@ -587,6 +594,30 @@ export default function App() {
                 ? `الحساب مقيد: ${selfUser.restriction_reason || 'تم تقييد حسابك من المطابقة والنشر بقرار إشرافي.'}`
                 : `Account Restricted: ${selfUser.restriction_reason || 'Your account is restricted.'}`}
             </span>
+          </div>
+        )}
+
+        {walletNotice && (
+          <div
+            role="status"
+            className={`px-4 py-2.5 text-xs font-semibold flex items-center gap-2 shrink-0 ${
+              walletNotice.status === 'APPROVED'
+                ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200'
+                : 'bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200'
+            }`}
+          >
+            <span className="flex-1">
+              {walletNotice.status === 'APPROVED'
+                ? lang === 'ar'
+                  ? `تم قبول طلب الشحن وإضافة ${walletNotice.points} نقطة إلى محفظتك.`
+                  : `Top-up approved: ${walletNotice.points} points were added to your wallet.`
+                : lang === 'ar'
+                  ? `تم رفض طلب الشحن.${walletNotice.reason ? ` السبب: ${walletNotice.reason}` : ''}`
+                  : `Top-up rejected.${walletNotice.reason ? ` Reason: ${walletNotice.reason}` : ''}`}
+            </span>
+            <button type="button" onClick={() => setWalletNotice(null)} aria-label="Dismiss">
+              ×
+            </button>
           </div>
         )}
 

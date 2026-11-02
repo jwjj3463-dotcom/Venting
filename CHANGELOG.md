@@ -4,6 +4,14 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.10.2 — الشحن اليدوي | Manual wallet top-ups
+
+### أُضيف
+
+- طلبات شحن رصيد يدوية بإثبات تحويل ومراجعة من المالك، مع إضافة الرصيد مرة واحدة فقط بعد الاعتماد وتسجيله في السجل المالي.
+- إعداد باقات الشحن ووسائل التحويل من لوحة الإدارة؛ تبقى غير متاحة للمستخدمين حتى إدخال بيانات المالك وتفعيلها.
+- عرض حالة الطلب وسبب الرفض، مع إشعار مباشر عند اتخاذ القرار.
+
 ## 3.10.1 — صور المستخدمين على الرادار | Radar user avatars
 
 ### أُضيف

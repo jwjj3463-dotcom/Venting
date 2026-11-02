@@ -6,7 +6,9 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = path.resolve(__dirname, '..', 'data');
+const DATA_DIR = process.env.FADFADAH_DATA_DIR?.trim()
+  ? path.resolve(process.env.FADFADAH_DATA_DIR.trim())
+  : path.resolve(__dirname, '..', 'data');
 const DB_FILE = path.join(DATA_DIR, 'fadfadah.db.json');
 
 export type UserRole = 'owner' | 'moderator' | 'user';
@@ -32,9 +34,57 @@ export type ModerationActionType =
 export type PaymentTransactionType =
   | 'SUBSCRIPTION'
   | 'POINTS_PACK'
+  | 'MANUAL_TOPUP'
   | 'FRAME_PURCHASE'
   | 'QUOTA_UNLOCK';
 export type PaymentStatus = 'COMPLETED' | 'FAILED' | 'REFUNDED';
+export type ManualTopupStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface ServerManualTopupPackage {
+  id: string;
+  title_ar: string;
+  title_en: string;
+  points: number;
+  amount: number;
+  currency: string;
+  enabled: boolean;
+}
+
+export interface ServerManualPaymentMethod {
+  id: string;
+  title_ar: string;
+  title_en: string;
+  instructions_ar: string;
+  instructions_en: string;
+  enabled: boolean;
+}
+
+export interface ServerManualTopupRequest {
+  id: string;
+  user_id: string;
+  user_nickname: string;
+  package_id: string;
+  package_title_ar: string;
+  package_title_en: string;
+  points: number;
+  amount: number;
+  currency: string;
+  payment_method_id: string;
+  payment_method_title_ar: string;
+  payment_method_title_en: string;
+  payment_instructions_ar: string;
+  payment_instructions_en: string;
+  transaction_reference: string;
+  reference_key: string;
+  proof_file: string;
+  proof_mime_type: string;
+  status: ManualTopupStatus;
+  rejection_reason?: string;
+  created_at: number;
+  reviewed_at?: number;
+  reviewed_by?: string;
+  idempotency_key: string;
+}
 
 export interface ServerUserRecord {
   id: string;
@@ -177,6 +227,7 @@ export interface ServerPaymentTransaction {
   order_id: string;
   idempotency_key: string;
   created_at: number;
+  amount_currency?: string;
 }
 
 export interface ServerAdSettings {
@@ -231,6 +282,9 @@ interface PersistedDatabaseShape {
   reports_moderation: ServerReportModeration[];
   moderation_actions?: ServerModerationAction[];
   payment_transactions?: ServerPaymentTransaction[];
+  manual_topup_requests?: ServerManualTopupRequest[];
+  manual_topup_packages?: ServerManualTopupPackage[];
+  manual_payment_methods?: ServerManualPaymentMethod[];
   ad_settings?: ServerAdSettings;
 }
 
@@ -295,6 +349,9 @@ export class FadfadahServerDB {
   public reports = new Map<string, ServerReportModeration>();
   public moderationActions = new Map<string, ServerModerationAction>();
   public paymentTransactions = new Map<string, ServerPaymentTransaction>();
+  public manualTopupRequests = new Map<string, ServerManualTopupRequest>();
+  public manualTopupPackages: ServerManualTopupPackage[] = [];
+  public manualPaymentMethods: ServerManualPaymentMethod[] = [];
   public idempotencyKeys = new Set<string>();
   public adSettings: ServerAdSettings = { ...DEFAULT_AD_SETTINGS };
   public ownerBootstrapCompleted = false;
@@ -346,6 +403,11 @@ export class FadfadahServerDB {
             this.idempotencyKeys.add(tx.idempotency_key);
           }
         }
+        for (const request of parsed.manual_topup_requests ?? []) {
+          this.manualTopupRequests.set(request.id, request);
+        }
+        this.manualTopupPackages = parsed.manual_topup_packages ?? [];
+        this.manualPaymentMethods = parsed.manual_payment_methods ?? [];
         this.ownerBootstrapCompleted =
           parsed.owner_bootstrap_completed === true ||
           Array.from(this.users.values()).some((user) => user.role === 'owner');
@@ -375,7 +437,7 @@ export class FadfadahServerDB {
 
   async flushNow(): Promise<void> {
     const snapshot: PersistedDatabaseShape = {
-      schemaVersion: 390,
+      schemaVersion: 391,
       users: Array.from(this.users.values()),
       personal_links: Array.from(this.personalLinks.values()),
       chat_rooms: Array.from(this.chatRooms.values()),
@@ -384,6 +446,9 @@ export class FadfadahServerDB {
       reports_moderation: Array.from(this.reports.values()),
       moderation_actions: Array.from(this.moderationActions.values()),
       payment_transactions: Array.from(this.paymentTransactions.values()),
+      manual_topup_requests: Array.from(this.manualTopupRequests.values()),
+      manual_topup_packages: this.manualTopupPackages,
+      manual_payment_methods: this.manualPaymentMethods,
       owner_bootstrap_completed: this.ownerBootstrapCompleted,
       owner_recovery_completed: this.ownerRecoveryCompleted,
       ad_settings: this.adSettings,
@@ -391,6 +456,38 @@ export class FadfadahServerDB {
     const tmpFile = `${DB_FILE}.tmp`;
     await fsp.writeFile(tmpFile, JSON.stringify(snapshot, null, 2), 'utf-8');
     await fsp.rename(tmpFile, DB_FILE);
+  }
+
+  async saveManualTopupProof(fileName: string, mimeType: string, bytes: Buffer): Promise<void> {
+    if (!/^[a-f0-9-]{36}\.(png|jpg|webp)$/.test(fileName)) {
+      throw new Error('Invalid manual top-up proof file name.');
+    }
+    const extension = path.extname(fileName);
+    const expectedMimeType =
+      extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg';
+    if (mimeType !== expectedMimeType) {
+      throw new Error('Manual top-up proof extension does not match its MIME type.');
+    }
+    const proofDirectory = path.join(DATA_DIR, 'manual-topup-proofs');
+    await fsp.mkdir(proofDirectory, { recursive: true });
+    await fsp.writeFile(path.join(proofDirectory, fileName), bytes, { flag: 'wx', mode: 0o600 });
+  }
+
+  async readManualTopupProof(fileName: string): Promise<{ mimeType: string; bytes: Buffer }> {
+    if (!/^[a-f0-9-]{36}\.(png|jpg|webp)$/.test(fileName)) {
+      throw new Error('Invalid manual top-up proof file name.');
+    }
+    const extension = path.extname(fileName);
+    const mimeType = extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg';
+    const bytes = await fsp.readFile(path.join(DATA_DIR, 'manual-topup-proofs', fileName));
+    return { mimeType, bytes };
+  }
+
+  async deleteManualTopupProof(fileName: string): Promise<void> {
+    if (!/^[a-f0-9-]{36}\.(png|jpg|webp)$/.test(fileName)) {
+      throw new Error('Invalid manual top-up proof file name.');
+    }
+    await fsp.rm(path.join(DATA_DIR, 'manual-topup-proofs', fileName), { force: true });
   }
 
   authenticateToken(rawToken: string | undefined): ServerUserRecord | null {

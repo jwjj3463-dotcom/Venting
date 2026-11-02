@@ -37,6 +37,50 @@ export interface AdminStatsDTO {
   totalTransactions: number;
 }
 
+export interface ManualTopupPackageDTO {
+  id: string;
+  title_ar: string;
+  title_en: string;
+  points: number;
+  amount: number;
+  currency: string;
+  enabled: boolean;
+}
+
+export interface ManualPaymentMethodDTO {
+  id: string;
+  title_ar: string;
+  title_en: string;
+  instructions_ar: string;
+  instructions_en: string;
+  enabled: boolean;
+}
+
+export interface ManualTopupRequestDTO {
+  id: string;
+  user_id: string;
+  user_nickname: string;
+  package_title_ar: string;
+  package_title_en: string;
+  points: number;
+  amount: number;
+  currency: string;
+  payment_method_title_ar: string;
+  payment_method_title_en: string;
+  transaction_reference: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  rejection_reason?: string;
+  created_at: number;
+  reviewed_at?: number;
+  reviewed_by?: string;
+  has_proof: boolean;
+}
+
+export interface ManualTopupConfigDTO {
+  packages: ManualTopupPackageDTO[];
+  payment_methods: ManualPaymentMethodDTO[];
+}
+
 type ConnectionState = 'connecting' | 'connected' | 'offline';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -54,6 +98,7 @@ class FadfadahNetworkClient {
   private typingUsersByRoom = new Map<string, boolean>();
   private stateListeners = new Set<() => void>();
   private manualClose = false;
+  private latestWalletNotice: { status: 'APPROVED' | 'REJECTED'; points: number; reason: string } | null = null;
 
   getServerBaseUrl(): string {
     const customUrl = realmDB.getSettings().custom_server_url?.trim();
@@ -76,6 +121,12 @@ class FadfadahNetworkClient {
 
   getConnectionState(): ConnectionState {
     return this.connectionState;
+  }
+
+  takeWalletNotice(): { status: 'APPROVED' | 'REJECTED'; points: number; reason: string } | null {
+    const notice = this.latestWalletNotice;
+    this.latestWalletNotice = null;
+    return notice;
   }
 
   getOnlineStats(): { onlineCount: number; queueSize: number } {
@@ -655,6 +706,25 @@ class FadfadahNetworkClient {
         await triggerLightHaptic();
         this.emitState();
       }
+    } else if (type === 'wallet:manual_topup_decision' && self) {
+      const status = ev.status === 'APPROVED' ? 'APPROVED' : 'REJECTED';
+      const pointsBalance = Number(ev.points_balance);
+      const transaction = ev.transaction as RealmPaymentTransaction | undefined;
+      await realmDB.write((tx) => {
+        if (Number.isSafeInteger(pointsBalance) && pointsBalance >= 0) {
+          tx.create('users', { ...self, points: pointsBalance });
+        }
+        if (transaction) {
+          tx.create('payment_transactions', transaction);
+        }
+      });
+      this.latestWalletNotice = {
+        status,
+        points: Number(ev.points_delta) || 0,
+        reason: typeof ev.rejection_reason === 'string' ? ev.rejection_reason : '',
+      };
+      await triggerLightHaptic();
+      this.emitState();
     } else if (type === 'peer:updated') {
       const peer = ev.peer as RealmUser | undefined;
       if (peer && (!self || peer.id !== self.id)) {
@@ -1468,6 +1538,110 @@ class FadfadahNetworkClient {
     if (!res.ok) throw new Error('FORBIDDEN');
     const data = await res.json();
     return (data.transactions as RealmPaymentTransaction[]) || [];
+  }
+
+  async getManualTopupConfig(): Promise<ManualTopupConfigDTO> {
+    const res = await fetch(`${this.getServerBaseUrl()}/api/payments/manual/config`);
+    if (!res.ok) throw new Error('تعذر تحميل باقات الشحن ووسائل الدفع.');
+    return (await res.json()) as ManualTopupConfigDTO;
+  }
+
+  async getManualTopupRequests(): Promise<ManualTopupRequestDTO[]> {
+    const res = await fetch(`${this.getServerBaseUrl()}/api/payments/manual/requests`, {
+      headers: this.getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error('تعذر تحميل طلبات الشحن.');
+    const data = (await res.json()) as { requests?: ManualTopupRequestDTO[] };
+    return data.requests || [];
+  }
+
+  async createManualTopupRequest(params: {
+    packageId: string;
+    paymentMethodId: string;
+    transactionReference: string;
+    proofDataUrl: string;
+    idempotencyKey: string;
+  }): Promise<{ ok: boolean; request?: ManualTopupRequestDTO; error?: string }> {
+    const res = await fetch(`${this.getServerBaseUrl()}/api/payments/manual/requests`, {
+      method: 'POST',
+      headers: { ...this.getAuthHeaders(), 'Idempotency-Key': params.idempotencyKey },
+      body: JSON.stringify({
+        package_id: params.packageId,
+        payment_method_id: params.paymentMethodId,
+        transaction_reference: params.transactionReference,
+        proof_data_url: params.proofDataUrl,
+      }),
+    });
+    const data = (await res.json()) as { request?: ManualTopupRequestDTO; error?: string };
+    return res.ok
+      ? { ok: true, request: data.request }
+      : { ok: false, error: data.error || 'تعذر إرسال طلب الشحن.' };
+  }
+
+  async getAdminManualTopups(): Promise<ManualTopupRequestDTO[]> {
+    const res = await fetch(`${this.getServerBaseUrl()}/api/admin/manual-topups`, {
+      headers: this.getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error('تعذر تحميل طلبات الشحن الإدارية.');
+    const data = (await res.json()) as { requests?: ManualTopupRequestDTO[] };
+    return data.requests || [];
+  }
+
+  async getAdminManualTopupProof(requestId: string): Promise<string> {
+    const res = await fetch(
+      `${this.getServerBaseUrl()}/api/admin/manual-topups/${encodeURIComponent(requestId)}/proof`,
+      { headers: this.getAuthHeaders() }
+    );
+    if (!res.ok) throw new Error('تعذر تحميل إثبات التحويل.');
+    return URL.createObjectURL(await res.blob());
+  }
+
+  async reviewManualTopup(
+    requestId: string,
+    decision: 'APPROVE' | 'REJECT',
+    reason?: string
+  ): Promise<{ ok: boolean; error?: string }> {
+    const res = await fetch(
+      `${this.getServerBaseUrl()}/api/admin/manual-topups/${encodeURIComponent(requestId)}/review`,
+      {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({ decision, reason }),
+      }
+    );
+    const data = (await res.json()) as {
+      error?: string;
+      transaction?: RealmPaymentTransaction;
+      points_balance?: number;
+    };
+    if (!res.ok) return { ok: false, error: data.error || 'تعذرت مراجعة طلب الشحن.' };
+    if (data.transaction) {
+      await realmDB.write((tx) => {
+        tx.create('payment_transactions', data.transaction!);
+      });
+    }
+    this.emitState();
+    return { ok: true };
+  }
+
+  async getAdminManualTopupConfig(): Promise<ManualTopupConfigDTO> {
+    const res = await fetch(`${this.getServerBaseUrl()}/api/admin/manual-topups/config`, {
+      headers: this.getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error('تعذر تحميل إعدادات الشحن اليدوي.');
+    return (await res.json()) as ManualTopupConfigDTO;
+  }
+
+  async saveAdminManualTopupConfig(
+    config: ManualTopupConfigDTO
+  ): Promise<{ ok: boolean; error?: string }> {
+    const res = await fetch(`${this.getServerBaseUrl()}/api/admin/manual-topups/config`, {
+      method: 'PUT',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(config),
+    });
+    const data = (await res.json()) as { error?: string };
+    return res.ok ? { ok: true } : { ok: false, error: data.error || 'تعذر حفظ إعدادات الشحن.' };
   }
 
   async deleteAccountPermanently(): Promise<void> {

@@ -23,12 +23,19 @@ import {
   Globe,
   ExternalLink,
   Layers,
+  Image as ImageIcon,
+  Plus,
+  Trash2,
+  Coins,
 } from 'lucide-react';
 import {
   AdminStatsDTO,
   fadfadahClient,
+  ManualTopupConfigDTO,
+  ManualTopupRequestDTO,
 } from '../services/fadfadahNetworkClient';
 import {
+  generateUUID,
   RealmPaymentTransaction,
   RealmReportModeration,
   RealmUser,
@@ -45,7 +52,7 @@ interface AdminModerationDashboardProps {
   onBack: () => void;
 }
 
-type AdminTab = 'overview' | 'reports' | 'audit_logs' | 'users' | 'ledger' | 'ads';
+type AdminTab = 'overview' | 'reports' | 'audit_logs' | 'users' | 'ledger' | 'manual_topups' | 'ads';
 
 export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> = ({
   selfUser,
@@ -78,6 +85,14 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
 
   // Financial Ledger
   const [transactions, setTransactions] = useState<RealmPaymentTransaction[]>([]);
+  const [manualTopups, setManualTopups] = useState<ManualTopupRequestDTO[]>([]);
+  const [manualTopupConfig, setManualTopupConfig] = useState<ManualTopupConfigDTO>({
+    packages: [],
+    payment_methods: [],
+  });
+  const [savingManualTopupConfig, setSavingManualTopupConfig] = useState(false);
+  const [manualTopupRejectionReasons, setManualTopupRejectionReasons] = useState<Record<string, string>>({});
+  const [selectedTopupProof, setSelectedTopupProof] = useState('');
 
   // Ads & AdMob Management
   const [adConfig, setAdConfig] = useState<AdConfig>(() => adService.getConfig());
@@ -107,6 +122,12 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
       } else if (activeTab === 'ledger') {
         const txs = await fadfadahClient.getAdminPayments();
         setTransactions(txs);
+      } else if (activeTab === 'manual_topups') {
+        const requests = await fadfadahClient.getAdminManualTopups();
+        setManualTopups(requests);
+        if (selfUser.role === 'owner') {
+          setManualTopupConfig(await fadfadahClient.getAdminManualTopupConfig());
+        }
       } else if (activeTab === 'ads') {
         const cfg = await adService.getAdminConfig();
         setAdConfig(cfg);
@@ -139,9 +160,83 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
     );
   };
 
+  const handleSaveManualTopupConfig = async () => {
+    setSavingManualTopupConfig(true);
+    setErrorMessage('');
+    const result = await fadfadahClient.saveAdminManualTopupConfig(manualTopupConfig);
+    setSavingManualTopupConfig(false);
+    if (!result.ok) {
+      setErrorMessage(result.error || (lang === 'ar' ? 'تعذر حفظ إعدادات الشحن.' : 'Could not save top-up settings.'));
+      return;
+    }
+    setActionNotice(lang === 'ar' ? 'تم حفظ إعدادات الشحن اليدوي.' : 'Manual top-up settings saved.');
+    await loadCurrentData();
+  };
+
+  const handleReviewManualTopup = async (
+    request: ManualTopupRequestDTO,
+    decision: 'APPROVE' | 'REJECT'
+  ) => {
+    const reason = manualTopupRejectionReasons[request.id]?.trim() || '';
+    if (decision === 'REJECT' && reason.length < 2) {
+      setErrorMessage(lang === 'ar' ? 'اكتب سبب الرفض قبل تنفيذ القرار.' : 'Enter a rejection reason first.');
+      return;
+    }
+    setLoading(true);
+    setErrorMessage('');
+    const result = await fadfadahClient.reviewManualTopup(request.id, decision, reason);
+    setLoading(false);
+    if (!result.ok) {
+      setErrorMessage(result.error || (lang === 'ar' ? 'تعذرت مراجعة الطلب.' : 'Could not review request.'));
+      return;
+    }
+    setActionNotice(
+      decision === 'APPROVE'
+        ? lang === 'ar'
+          ? 'تم قبول الطلب وإضافة النقاط مرة واحدة وتسجيلها في السجل المالي.'
+          : 'Request approved; points credited once and recorded in the ledger.'
+        : lang === 'ar'
+          ? 'تم رفض الطلب دون إضافة رصيد.'
+          : 'Request rejected without crediting points.'
+    );
+    await loadCurrentData();
+  };
+
+  const handleShowTopupProof = async (requestId: string) => {
+    setErrorMessage('');
+    try {
+      const proofUrl = await fadfadahClient.getAdminManualTopupProof(requestId);
+      setSelectedTopupProof(proofUrl);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'تعذر تحميل إثبات التحويل.');
+    }
+  };
+
+  const updateTopupPackage = (packageId: string, updates: Partial<ManualTopupConfigDTO['packages'][number]>) => {
+    setManualTopupConfig((config) => ({
+      ...config,
+      packages: config.packages.map((pack) => (pack.id === packageId ? { ...pack, ...updates } : pack)),
+    }));
+  };
+
+  const updateTopupMethod = (methodId: string, updates: Partial<ManualTopupConfigDTO['payment_methods'][number]>) => {
+    setManualTopupConfig((config) => ({
+      ...config,
+      payment_methods: config.payment_methods.map((method) =>
+        method.id === methodId ? { ...method, ...updates } : method
+      ),
+    }));
+  };
+
   useEffect(() => {
     loadCurrentData();
   }, [activeTab]);
+
+  useEffect(() => {
+    return () => {
+      if (selectedTopupProof) URL.revokeObjectURL(selectedTopupProof);
+    };
+  }, [selectedTopupProof]);
 
   const handleTakeAction = async (action: 'WARN' | 'RESTRICT' | 'SUSPEND' | 'BAN' | 'RESOLVE' | 'DISMISS') => {
     if (!selectedReport) return;
@@ -243,6 +338,7 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
           { id: 'audit_logs' as AdminTab, label: t.auditLogsTab, icon: History },
           { id: 'users' as AdminTab, label: t.usersTab, icon: Users },
           { id: 'ledger' as AdminTab, label: t.paymentsLedgerTab, icon: CreditCard },
+          { id: 'manual_topups' as AdminTab, label: lang === 'ar' ? 'الشحن اليدوي' : 'Manual top-ups', icon: Coins },
           { id: 'ads' as AdminTab, label: lang === 'ar' ? 'الإعلانات وAdMob' : 'Ads & AdMob', icon: Megaphone },
         ].map((tab) => {
           const Icon = tab.icon;
@@ -770,6 +866,9 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
                     </div>
 
                     <div className="text-end">
+                      {tx.amount_currency && (
+                        <p className="text-[10px] text-slate-500 font-mono-num">{tx.amount_currency}</p>
+                      )}
                       <p className="font-bold text-emerald-600 dark:text-emerald-400 font-mono-num text-sm">
                         {tx.amount_usd > 0 ? `$${tx.amount_usd}` : `${tx.points_delta} pts`}
                       </p>
@@ -784,7 +883,247 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
           </div>
         )}
 
-        {/* 6. ADS & REAL MONETIZATION MANAGEMENT */}
+        {activeTab === 'manual_topups' && (
+          <div className="space-y-5">
+            <section className="space-y-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  {lang === 'ar' ? 'طلبات الشحن الواردة' : 'Incoming top-up requests'}
+                </h3>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  {lang === 'ar'
+                    ? 'تظهر أرقام العمليات والإثباتات للمخولين فقط. اعتماد الطلب أو رفضه متاح للمالك فقط.'
+                    : 'Transfer references and proofs are restricted. Only the owner can approve or reject requests.'}
+                </p>
+              </div>
+              {manualTopups.length === 0 ? (
+                <div className="rounded-3xl bg-white dark:bg-[#1E1B2E] border border-slate-200 dark:border-white/10 p-8 text-center text-xs text-slate-500">
+                  {lang === 'ar' ? 'لا توجد طلبات شحن حتى الآن.' : 'No top-up requests yet.'}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {manualTopups.map((request) => (
+                    <article
+                      key={request.id}
+                      className="rounded-2xl bg-white dark:bg-[#1E1B2E] border border-slate-200 dark:border-white/10 p-4 space-y-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-bold text-sm text-slate-900 dark:text-white">
+                            {request.user_nickname} · {lang === 'ar' ? request.package_title_ar : request.package_title_en}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500 font-mono-num">
+                            {request.amount} {request.currency} · {request.points} {lang === 'ar' ? 'نقطة' : 'points'}
+                          </p>
+                        </div>
+                        <span
+                          className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                            request.status === 'PENDING'
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                              : request.status === 'APPROVED'
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                : 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
+                          }`}
+                        >
+                          {request.status === 'PENDING'
+                            ? lang === 'ar' ? 'قيد المراجعة' : 'Pending'
+                            : request.status === 'APPROVED'
+                              ? lang === 'ar' ? 'مقبول' : 'Approved'
+                              : lang === 'ar' ? 'مرفوض' : 'Rejected'}
+                        </span>
+                      </div>
+                      <div className="grid gap-1 text-xs text-slate-600 dark:text-slate-300">
+                        <p>{lang === 'ar' ? 'وسيلة الدفع: ' : 'Payment method: '}{lang === 'ar' ? request.payment_method_title_ar : request.payment_method_title_en}</p>
+                        <p className="break-all font-mono-num">{lang === 'ar' ? 'رقم العملية: ' : 'Transfer reference: '}{request.transaction_reference}</p>
+                        <p className="text-[11px] text-slate-400">
+                          {new Date(request.created_at).toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-US')}
+                        </p>
+                        {request.rejection_reason && (
+                          <p className="text-rose-600 dark:text-rose-300">
+                            {lang === 'ar' ? 'سبب الرفض: ' : 'Rejection reason: '}{request.rejection_reason}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {selfUser.role === 'owner' && request.has_proof && (
+                          <button
+                            type="button"
+                            onClick={() => void handleShowTopupProof(request.id)}
+                            className="min-h-[40px] px-3 rounded-xl bg-slate-100 dark:bg-white/10 text-xs font-bold flex items-center gap-1.5"
+                          >
+                            <ImageIcon className="w-4 h-4" />
+                            {lang === 'ar' ? 'عرض إثبات التحويل' : 'View transfer proof'}
+                          </button>
+                        )}
+                      </div>
+                      {selfUser.role === 'owner' && request.status === 'PENDING' && (
+                        <div className="border-t border-slate-100 dark:border-white/10 pt-3 space-y-2">
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <button
+                              type="button"
+                              disabled={loading}
+                              onClick={() => void handleReviewManualTopup(request, 'APPROVE')}
+                              className="min-h-[42px] px-4 rounded-xl bg-emerald-600 disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5"
+                            >
+                              <CheckCircle2 className="w-4 h-4" />
+                              {lang === 'ar' ? 'قبول وإضافة النقاط' : 'Approve & credit points'}
+                            </button>
+                            <input
+                              value={manualTopupRejectionReasons[request.id] || ''}
+                              onChange={(e) =>
+                                setManualTopupRejectionReasons((reasons) => ({
+                                  ...reasons,
+                                  [request.id]: e.target.value,
+                                }))
+                              }
+                              maxLength={500}
+                              placeholder={lang === 'ar' ? 'سبب الرفض مطلوب' : 'Rejection reason required'}
+                              className="min-h-[42px] flex-1 min-w-0 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#151221] px-3 text-xs"
+                            />
+                            <button
+                              type="button"
+                              disabled={loading || (manualTopupRejectionReasons[request.id] || '').trim().length < 2}
+                              onClick={() => void handleReviewManualTopup(request, 'REJECT')}
+                              className="min-h-[42px] px-4 rounded-xl bg-rose-600 disabled:opacity-50 text-white text-xs font-bold"
+                            >
+                              {lang === 'ar' ? 'رفض الطلب' : 'Reject'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {selfUser.role === 'owner' && (
+              <section className="rounded-3xl bg-white dark:bg-[#1E1B2E] border border-slate-200 dark:border-white/10 p-5 space-y-5">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    {lang === 'ar' ? 'باقات الشحن ووسائل الدفع' : 'Top-up packages and payment methods'}
+                  </h3>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    {lang === 'ar'
+                      ? 'أدخل بياناتك الفعلية بنفسك. تظل الخيارات غير ظاهرة للمستخدمين حتى تفعيلها وحفظها.'
+                      : 'Enter your real payment details. Options remain unavailable to users until enabled and saved.'}
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="text-xs font-bold">{lang === 'ar' ? 'الباقات' : 'Packages'}</h4>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setManualTopupConfig((config) => ({
+                          ...config,
+                          packages: [
+                            ...config.packages,
+                            {
+                              id: generateUUID(),
+                              title_ar: '',
+                              title_en: '',
+                              points: 0,
+                              amount: 0,
+                              currency: '',
+                              enabled: false,
+                            },
+                          ],
+                        }))
+                      }
+                      className="min-h-[38px] px-3 rounded-xl bg-[#8B5CF6] text-white text-xs font-bold flex items-center gap-1"
+                    >
+                      <Plus className="w-4 h-4" /> {lang === 'ar' ? 'إضافة باقة' : 'Add package'}
+                    </button>
+                  </div>
+                  {manualTopupConfig.packages.map((pack) => (
+                    <div key={pack.id} className="rounded-2xl bg-slate-50 dark:bg-[#151221] p-3 space-y-2">
+                      <div className="grid sm:grid-cols-2 gap-2">
+                        <input value={pack.title_ar} onChange={(e) => updateTopupPackage(pack.id, { title_ar: e.target.value })} maxLength={60} placeholder="اسم الباقة بالعربية" className="min-h-[40px] rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1E1B2E] px-2.5 text-xs" />
+                        <input value={pack.title_en} onChange={(e) => updateTopupPackage(pack.id, { title_en: e.target.value })} maxLength={60} placeholder="Package name in English" className="min-h-[40px] rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1E1B2E] px-2.5 text-xs" />
+                        <input type="number" min="1" step="1" value={pack.points || ''} onChange={(e) => updateTopupPackage(pack.id, { points: Number(e.target.value) })} placeholder={lang === 'ar' ? 'عدد النقاط' : 'Points'} className="min-h-[40px] rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1E1B2E] px-2.5 text-xs" />
+                        <div className="flex gap-2">
+                          <input type="number" min="0.01" step="0.01" value={pack.amount || ''} onChange={(e) => updateTopupPackage(pack.id, { amount: Number(e.target.value) })} placeholder={lang === 'ar' ? 'المبلغ' : 'Amount'} className="min-h-[40px] w-full min-w-0 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1E1B2E] px-2.5 text-xs" />
+                          <input value={pack.currency} onChange={(e) => updateTopupPackage(pack.id, { currency: e.target.value.toUpperCase() })} maxLength={3} placeholder="EGP" className="min-h-[40px] w-20 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1E1B2E] px-2 text-xs uppercase" />
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <label className="flex items-center gap-2 text-xs">
+                          <input type="checkbox" checked={pack.enabled} onChange={(e) => updateTopupPackage(pack.id, { enabled: e.target.checked })} />
+                          {lang === 'ar' ? 'متاحة للمستخدمين' : 'Available to users'}
+                        </label>
+                        <button type="button" onClick={() => setManualTopupConfig((config) => ({ ...config, packages: config.packages.filter((item) => item.id !== pack.id) }))} aria-label={lang === 'ar' ? 'حذف الباقة' : 'Delete package'} className="min-h-[36px] min-w-[36px] rounded-lg text-rose-600 flex items-center justify-center">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="text-xs font-bold">{lang === 'ar' ? 'وسائل الدفع' : 'Payment methods'}</h4>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setManualTopupConfig((config) => ({
+                          ...config,
+                          payment_methods: [
+                            ...config.payment_methods,
+                            {
+                              id: generateUUID(),
+                              title_ar: '',
+                              title_en: '',
+                              instructions_ar: '',
+                              instructions_en: '',
+                              enabled: false,
+                            },
+                          ],
+                        }))
+                      }
+                      className="min-h-[38px] px-3 rounded-xl bg-[#8B5CF6] text-white text-xs font-bold flex items-center gap-1"
+                    >
+                      <Plus className="w-4 h-4" /> {lang === 'ar' ? 'إضافة وسيلة' : 'Add method'}
+                    </button>
+                  </div>
+                  {manualTopupConfig.payment_methods.map((method) => (
+                    <div key={method.id} className="rounded-2xl bg-slate-50 dark:bg-[#151221] p-3 space-y-2">
+                      <div className="grid sm:grid-cols-2 gap-2">
+                        <input value={method.title_ar} onChange={(e) => updateTopupMethod(method.id, { title_ar: e.target.value })} maxLength={60} placeholder="اسم الوسيلة بالعربية" className="min-h-[40px] rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1E1B2E] px-2.5 text-xs" />
+                        <input value={method.title_en} onChange={(e) => updateTopupMethod(method.id, { title_en: e.target.value })} maxLength={60} placeholder="Payment method name" className="min-h-[40px] rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1E1B2E] px-2.5 text-xs" />
+                        <textarea value={method.instructions_ar} onChange={(e) => updateTopupMethod(method.id, { instructions_ar: e.target.value })} maxLength={1000} placeholder="بيانات التحويل والتعليمات بالعربية" className="min-h-[78px] rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1E1B2E] p-2.5 text-xs" />
+                        <textarea value={method.instructions_en} onChange={(e) => updateTopupMethod(method.id, { instructions_en: e.target.value })} maxLength={1000} placeholder="Transfer details and instructions" className="min-h-[78px] rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1E1B2E] p-2.5 text-xs" />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <label className="flex items-center gap-2 text-xs">
+                          <input type="checkbox" checked={method.enabled} onChange={(e) => updateTopupMethod(method.id, { enabled: e.target.checked })} />
+                          {lang === 'ar' ? 'متاحة للمستخدمين' : 'Available to users'}
+                        </label>
+                        <button type="button" onClick={() => setManualTopupConfig((config) => ({ ...config, payment_methods: config.payment_methods.filter((item) => item.id !== method.id) }))} aria-label={lang === 'ar' ? 'حذف وسيلة الدفع' : 'Delete payment method'} className="min-h-[36px] min-w-[36px] rounded-lg text-rose-600 flex items-center justify-center">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  disabled={savingManualTopupConfig}
+                  onClick={() => void handleSaveManualTopupConfig()}
+                  className="w-full min-h-[46px] rounded-xl bg-emerald-600 disabled:opacity-50 text-white text-sm font-bold"
+                >
+                  {savingManualTopupConfig
+                    ? lang === 'ar' ? 'جارٍ الحفظ...' : 'Saving...'
+                    : lang === 'ar' ? 'حفظ إعدادات الشحن' : 'Save top-up settings'}
+                </button>
+              </section>
+            )}
+          </div>
+        )}
+
+        {/* 7. ADS & REAL MONETIZATION MANAGEMENT */}
         {activeTab === 'ads' && (
           <div className="space-y-5 max-w-3xl">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1">
@@ -1182,6 +1521,31 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
         lang={lang}
         onClose={() => setTestInterstitialOpen(false)}
       />
+      {selectedTopupProof && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={lang === 'ar' ? 'إثبات التحويل' : 'Transfer proof'}
+          onClick={() => setSelectedTopupProof('')}
+          className="fixed inset-0 z-[100] bg-black/80 p-4 flex items-center justify-center"
+        >
+          <div className="relative max-w-3xl max-h-full" onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setSelectedTopupProof('')}
+              aria-label={lang === 'ar' ? 'إغلاق الإثبات' : 'Close proof'}
+              className="absolute -top-3 -end-3 z-10 w-9 h-9 rounded-full bg-white text-slate-900 font-bold shadow-lg"
+            >
+              ×
+            </button>
+            <img
+              src={selectedTopupProof}
+              alt={lang === 'ar' ? 'صورة إثبات التحويل' : 'Transfer proof image'}
+              className="max-w-full max-h-[85dvh] rounded-2xl bg-white object-contain shadow-2xl"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -19,6 +19,9 @@ import {
   type ServerReportModeration,
   type ServerModerationAction,
   type ServerPaymentTransaction,
+  type ServerManualTopupRequest,
+  type ServerManualTopupPackage,
+  type ServerManualPaymentMethod,
   type UserRole,
   type AccountStatus,
   type ReportTargetType,
@@ -450,7 +453,7 @@ async function startServer() {
     res.json({
       ok: true,
       package: 'com.fadfadahnative',
-      version: '3.10.1',
+      version: '3.10.2',
       onlineUsers: activeSockets.size,
       totalRegisteredUsers: serverDB.users.size,
     });
@@ -1355,6 +1358,415 @@ async function startServer() {
     if (!verifyAccountActive(user, res)) return;
 
     res.status(503).json({ error: 'PAYMENT_VERIFICATION_NOT_CONFIGURED' });
+  });
+
+  const manualTopupReservations = new Set<string>();
+
+  const publicManualTopupRequest = (request: ServerManualTopupRequest) => ({
+    id: request.id,
+    user_id: request.user_id,
+    user_nickname: request.user_nickname,
+    package_title_ar: request.package_title_ar,
+    package_title_en: request.package_title_en,
+    points: request.points,
+    amount: request.amount,
+    currency: request.currency,
+    payment_method_title_ar: request.payment_method_title_ar,
+    payment_method_title_en: request.payment_method_title_en,
+    transaction_reference: request.transaction_reference,
+    status: request.status,
+    rejection_reason: request.rejection_reason,
+    created_at: request.created_at,
+    reviewed_at: request.reviewed_at,
+    reviewed_by: request.reviewed_by,
+    has_proof: Boolean(request.proof_file),
+  });
+
+  // Public payment instructions and packages are configured by the account owner.
+  app.get('/api/payments/manual/config', (_req: Request, res: Response) => {
+    res.json({
+      packages: serverDB.manualTopupPackages.filter((pack) => pack.enabled),
+      payment_methods: serverDB.manualPaymentMethods.filter((method) => method.enabled),
+    });
+  });
+
+  app.get('/api/payments/manual/requests', (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    if (!user) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    const requests = Array.from(serverDB.manualTopupRequests.values())
+      .filter((request) => request.user_id === user.id)
+      .sort((a, b) => b.created_at - a.created_at)
+      .map(publicManualTopupRequest);
+    res.json({ requests });
+  });
+
+  app.post('/api/payments/manual/requests', async (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    if (!user) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    if (!verifyAccountActive(user, res)) return;
+
+    const { package_id: packageId, payment_method_id: paymentMethodId, transaction_reference: reference, proof_data_url: proofDataUrl } =
+      (req.body || {}) as Record<string, unknown>;
+    const idempotencyKey = String(req.get('Idempotency-Key') || '');
+    if (!/^[a-f0-9-]{36}$/i.test(idempotencyKey)) {
+      res.status(400).json({ error: 'INVALID_IDEMPOTENCY_KEY' });
+      return;
+    }
+
+    const existing = Array.from(serverDB.manualTopupRequests.values()).find(
+      (request) => request.user_id === user.id && request.idempotency_key === idempotencyKey
+    );
+    if (existing) {
+      res.json({ request: publicManualTopupRequest(existing) });
+      return;
+    }
+
+    const pack = serverDB.manualTopupPackages.find((item) => item.id === packageId && item.enabled);
+    const method = serverDB.manualPaymentMethods.find((item) => item.id === paymentMethodId && item.enabled);
+    if (!pack || !method) {
+      res.status(400).json({ error: 'INVALID_PACKAGE_OR_PAYMENT_METHOD' });
+      return;
+    }
+    if (typeof reference !== 'string' || reference.trim().length < 3 || reference.trim().length > 100) {
+      res.status(400).json({ error: 'INVALID_TRANSACTION_REFERENCE' });
+      return;
+    }
+    if (typeof proofDataUrl !== 'string') {
+      res.status(400).json({ error: 'PAYMENT_PROOF_REQUIRED' });
+      return;
+    }
+    const proofMatch = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(proofDataUrl);
+    if (!proofMatch) {
+      res.status(400).json({ error: 'INVALID_PAYMENT_PROOF' });
+      return;
+    }
+    const proofMimeType = proofMatch[1] === 'jpeg' ? 'image/jpeg' : `image/${proofMatch[1]}`;
+    const proofBytes = Buffer.from(proofMatch[2], 'base64');
+    const hasValidSignature =
+      proofMimeType === 'image/png'
+        ? proofBytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+        : proofMimeType === 'image/jpeg'
+          ? proofBytes.length >= 3 && proofBytes[0] === 255 && proofBytes[1] === 216 && proofBytes[2] === 255
+          : proofBytes.length >= 12 &&
+            proofBytes.toString('ascii', 0, 4) === 'RIFF' &&
+            proofBytes.toString('ascii', 8, 12) === 'WEBP';
+    if (!proofBytes.length || proofBytes.length > 2 * 1024 * 1024 || !hasValidSignature) {
+      res.status(400).json({ error: 'INVALID_PAYMENT_PROOF' });
+      return;
+    }
+
+    const referenceKey = reference.trim().normalize('NFKC').toLocaleLowerCase();
+    if (
+      Array.from(serverDB.manualTopupRequests.values()).some(
+        (request) => request.reference_key === referenceKey
+      ) ||
+      manualTopupReservations.has(`reference:${referenceKey}`)
+    ) {
+      res.status(409).json({ error: 'TRANSACTION_REFERENCE_ALREADY_USED' });
+      return;
+    }
+
+    const idempotencyReservation = `idempotency:${user.id}:${idempotencyKey}`;
+    if (manualTopupReservations.has(idempotencyReservation)) {
+      res.status(409).json({ error: 'MANUAL_TOPUP_REQUEST_IN_PROGRESS' });
+      return;
+    }
+    manualTopupReservations.add(idempotencyReservation);
+    manualTopupReservations.add(`reference:${referenceKey}`);
+    const id = crypto.randomUUID();
+    const extension = proofMimeType === 'image/png' ? 'png' : proofMimeType === 'image/webp' ? 'webp' : 'jpg';
+    const proofFile = `${id}.${extension}`;
+    try {
+      await serverDB.saveManualTopupProof(proofFile, proofMimeType, proofBytes);
+    } catch (error) {
+      manualTopupReservations.delete(idempotencyReservation);
+      manualTopupReservations.delete(`reference:${referenceKey}`);
+      console.error('Manual top-up proof storage failed:', error);
+      res.status(500).json({ error: 'PAYMENT_PROOF_STORAGE_FAILED' });
+      return;
+    }
+
+    const request: ServerManualTopupRequest = {
+      id,
+      user_id: user.id,
+      user_nickname: user.nickname,
+      package_id: pack.id,
+      package_title_ar: pack.title_ar,
+      package_title_en: pack.title_en,
+      points: pack.points,
+      amount: pack.amount,
+      currency: pack.currency,
+      payment_method_id: method.id,
+      payment_method_title_ar: method.title_ar,
+      payment_method_title_en: method.title_en,
+      payment_instructions_ar: method.instructions_ar,
+      payment_instructions_en: method.instructions_en,
+      transaction_reference: reference.trim(),
+      reference_key: referenceKey,
+      proof_file: proofFile,
+      proof_mime_type: proofMimeType,
+      status: 'PENDING',
+      created_at: Date.now(),
+      idempotency_key: idempotencyKey,
+    };
+    serverDB.manualTopupRequests.set(id, request);
+    try {
+      await serverDB.flushNow();
+    } catch (error) {
+      serverDB.manualTopupRequests.delete(id);
+      await serverDB.deleteManualTopupProof(proofFile).catch((cleanupError) => {
+        console.error('Failed to remove an uncommitted manual top-up proof:', cleanupError);
+      });
+      manualTopupReservations.delete(idempotencyReservation);
+      manualTopupReservations.delete(`reference:${referenceKey}`);
+      console.error('Manual top-up request persistence failed:', error);
+      res.status(500).json({ error: 'MANUAL_TOPUP_STORAGE_FAILED' });
+      return;
+    }
+    manualTopupReservations.delete(idempotencyReservation);
+    manualTopupReservations.delete(`reference:${referenceKey}`);
+    res.status(201).json({ request: publicManualTopupRequest(request) });
+  });
+
+  app.get('/api/admin/manual-topups', (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    if (!user || (user.role !== 'owner' && user.role !== 'moderator')) {
+      res.status(403).json({ error: 'FORBIDDEN_STAFF_ONLY' });
+      return;
+    }
+    const requests = Array.from(serverDB.manualTopupRequests.values())
+      .sort((a, b) => b.created_at - a.created_at)
+      .slice(0, 200)
+      .map(publicManualTopupRequest);
+    res.json({ requests });
+  });
+
+  app.get('/api/admin/manual-topups/:id/proof', async (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    if (!user || user.role !== 'owner') {
+      res.status(403).json({ error: 'FORBIDDEN_OWNER_ONLY' });
+      return;
+    }
+    const request = serverDB.manualTopupRequests.get(req.params.id);
+    if (!request) {
+      res.status(404).json({ error: 'MANUAL_TOPUP_NOT_FOUND' });
+      return;
+    }
+    try {
+      const proof = await serverDB.readManualTopupProof(request.proof_file);
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.type(proof.mimeType).send(proof.bytes);
+    } catch (error) {
+      console.error('Manual top-up proof could not be read:', error);
+      res.status(404).json({ error: 'PAYMENT_PROOF_NOT_FOUND' });
+    }
+  });
+
+  app.post('/api/admin/manual-topups/:id/review', async (req: Request, res: Response) => {
+    const reviewer = serverDB.authenticateToken(extractBearerToken(req));
+    if (!reviewer || reviewer.role !== 'owner') {
+      res.status(403).json({ error: 'FORBIDDEN_OWNER_ONLY' });
+      return;
+    }
+    const request = serverDB.manualTopupRequests.get(req.params.id);
+    if (!request) {
+      res.status(404).json({ error: 'MANUAL_TOPUP_NOT_FOUND' });
+      return;
+    }
+    if (request.status !== 'PENDING') {
+      res.status(409).json({ error: 'MANUAL_TOPUP_ALREADY_REVIEWED' });
+      return;
+    }
+
+    const decision = (req.body || {}) as { decision?: unknown; reason?: unknown };
+    if (decision.decision !== 'APPROVE' && decision.decision !== 'REJECT') {
+      res.status(400).json({ error: 'INVALID_REVIEW_DECISION' });
+      return;
+    }
+    const rejectionReason =
+      typeof decision.reason === 'string' ? decision.reason.trim().slice(0, 500) : '';
+    if (decision.decision === 'REJECT' && rejectionReason.length < 2) {
+      res.status(400).json({ error: 'REJECTION_REASON_REQUIRED' });
+      return;
+    }
+
+    const targetUser = serverDB.users.get(request.user_id);
+    if (!targetUser) {
+      res.status(404).json({ error: 'TOPUP_USER_NOT_FOUND' });
+      return;
+    }
+    const previousPoints = targetUser.points;
+    const previousStatus = request.status;
+    const previousReviewedAt = request.reviewed_at;
+    const previousReviewer = request.reviewed_by;
+    const previousReason = request.rejection_reason;
+    let transaction: ServerPaymentTransaction | undefined;
+    if (decision.decision === 'APPROVE') {
+      targetUser.points += request.points;
+      transaction = {
+        id: crypto.randomUUID(),
+        user_id: targetUser.id,
+        user_nickname: targetUser.nickname,
+        type: 'MANUAL_TOPUP',
+        item_id: request.package_id,
+        item_title: request.package_title_ar,
+        amount_usd: 0,
+        amount_currency: `${request.amount} ${request.currency}`,
+        points_delta: request.points,
+        status: 'COMPLETED',
+        order_id: request.id,
+        idempotency_key: `manual-topup-${request.id}`,
+        created_at: Date.now(),
+      };
+      serverDB.paymentTransactions.set(transaction.id, transaction);
+      serverDB.idempotencyKeys.add(transaction.idempotency_key);
+    }
+    request.status = decision.decision === 'APPROVE' ? 'APPROVED' : 'REJECTED';
+    request.reviewed_at = Date.now();
+    request.reviewed_by = reviewer.id;
+    request.rejection_reason = decision.decision === 'REJECT' ? rejectionReason : undefined;
+
+    try {
+      await serverDB.flushNow();
+    } catch (error) {
+      targetUser.points = previousPoints;
+      request.status = previousStatus;
+      request.reviewed_at = previousReviewedAt;
+      request.reviewed_by = previousReviewer;
+      request.rejection_reason = previousReason;
+      if (transaction) {
+        serverDB.paymentTransactions.delete(transaction.id);
+        serverDB.idempotencyKeys.delete(transaction.idempotency_key);
+      }
+      console.error('Manual top-up review persistence failed:', error);
+      res.status(500).json({ error: 'MANUAL_TOPUP_REVIEW_STORAGE_FAILED' });
+      return;
+    }
+
+    sendToUser(targetUser.id, {
+      type: 'wallet:manual_topup_decision',
+      request_id: request.id,
+      status: request.status,
+      points_delta: transaction?.points_delta ?? 0,
+      points_balance: targetUser.points,
+      rejection_reason: request.rejection_reason || '',
+      transaction,
+    });
+    res.json({
+      request: publicManualTopupRequest(request),
+      transaction,
+      points_balance: targetUser.points,
+    });
+  });
+
+  app.get('/api/admin/manual-topups/config', (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    if (!user || user.role !== 'owner') {
+      res.status(403).json({ error: 'FORBIDDEN_OWNER_ONLY' });
+      return;
+    }
+    res.json({
+      packages: serverDB.manualTopupPackages,
+      payment_methods: serverDB.manualPaymentMethods,
+    });
+  });
+
+  app.put('/api/admin/manual-topups/config', async (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    if (!user || user.role !== 'owner') {
+      res.status(403).json({ error: 'FORBIDDEN_OWNER_ONLY' });
+      return;
+    }
+    const body = (req.body || {}) as {
+      packages?: unknown;
+      payment_methods?: unknown;
+    };
+    const isText = (value: unknown, max: number) =>
+      typeof value === 'string' && value.trim().length > 0 && value.trim().length <= max;
+    const validId = (value: unknown) =>
+      typeof value === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(value);
+    const validPackages =
+      Array.isArray(body.packages) &&
+      body.packages.length <= 50 &&
+      body.packages.every((entry) => {
+        if (!entry || typeof entry !== 'object') return false;
+        const pack = entry as Partial<ServerManualTopupPackage>;
+        return (
+          validId(pack.id) &&
+          isText(pack.title_ar, 60) &&
+          isText(pack.title_en, 60) &&
+          Number.isSafeInteger(pack.points) &&
+          Number(pack.points) > 0 &&
+          Number(pack.points) <= 10_000_000 &&
+          typeof pack.amount === 'number' &&
+          Number.isFinite(pack.amount) &&
+          pack.amount > 0 &&
+          pack.amount <= 1_000_000 &&
+          Math.round(pack.amount * 100) === pack.amount * 100 &&
+          typeof pack.currency === 'string' &&
+          /^[A-Z]{3}$/.test(pack.currency) &&
+          typeof pack.enabled === 'boolean'
+        );
+      });
+    const validMethods =
+      Array.isArray(body.payment_methods) &&
+      body.payment_methods.length <= 50 &&
+      body.payment_methods.every((entry) => {
+        if (!entry || typeof entry !== 'object') return false;
+        const method = entry as Partial<ServerManualPaymentMethod>;
+        return (
+          validId(method.id) &&
+          isText(method.title_ar, 60) &&
+          isText(method.title_en, 60) &&
+          isText(method.instructions_ar, 1000) &&
+          isText(method.instructions_en, 1000) &&
+          typeof method.enabled === 'boolean'
+        );
+      });
+    if (!validPackages || !validMethods) {
+      res.status(400).json({ error: 'INVALID_MANUAL_TOPUP_CONFIGURATION' });
+      return;
+    }
+    const packages = body.packages as ServerManualTopupPackage[];
+    const methods = body.payment_methods as ServerManualPaymentMethod[];
+    if (
+      new Set(packages.map((pack) => pack.id)).size !== packages.length ||
+      new Set(methods.map((method) => method.id)).size !== methods.length
+    ) {
+      res.status(400).json({ error: 'DUPLICATE_CONFIGURATION_ID' });
+      return;
+    }
+    const previousPackages = serverDB.manualTopupPackages;
+    const previousMethods = serverDB.manualPaymentMethods;
+    serverDB.manualTopupPackages = packages.map((pack) => ({
+      ...pack,
+      title_ar: pack.title_ar.trim(),
+      title_en: pack.title_en.trim(),
+    }));
+    serverDB.manualPaymentMethods = methods.map((method) => ({
+      ...method,
+      title_ar: method.title_ar.trim(),
+      title_en: method.title_en.trim(),
+      instructions_ar: method.instructions_ar.trim(),
+      instructions_en: method.instructions_en.trim(),
+    }));
+    try {
+      await serverDB.flushNow();
+    } catch (error) {
+      serverDB.manualTopupPackages = previousPackages;
+      serverDB.manualPaymentMethods = previousMethods;
+      console.error('Manual top-up configuration persistence failed:', error);
+      res.status(500).json({ error: 'MANUAL_TOPUP_CONFIG_STORAGE_FAILED' });
+      return;
+    }
+    res.json({ packages: serverDB.manualTopupPackages, payment_methods: serverDB.manualPaymentMethods });
   });
 
   // Server-Authoritative Points Spending (Frame Purchase or Quota Unlock)

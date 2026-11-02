@@ -28,6 +28,7 @@ export type ModerationActionType =
 export type PaymentTransactionType =
   | 'SUBSCRIPTION'
   | 'POINTS_PACK'
+  | 'MANUAL_TOPUP'
   | 'FRAME_PURCHASE'
   | 'QUOTA_UNLOCK';
 export type PaymentStatus = 'COMPLETED' | 'FAILED' | 'REFUNDED';
@@ -147,6 +148,7 @@ export interface RealmPaymentTransaction {
   order_id: string;
   idempotency_key: string;
   created_at: number;
+  amount_currency?: string;
 }
 
 export interface RealmAppSettings {
@@ -295,6 +297,7 @@ export const FADFADAH_REALM_SCHEMAS: RealmObjectSchema[] = [
       order_id: 'string',
       idempotency_key: 'string',
       created_at: 'date',
+      amount_currency: 'string?',
     },
   },
   {
