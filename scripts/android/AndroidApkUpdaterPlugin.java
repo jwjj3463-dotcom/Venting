@@ -83,8 +83,13 @@ public class AndroidApkUpdaterPlugin extends Plugin {
 
     private void downloadAndOpenInstaller(String rawUrl) {
         HttpURLConnection connection = null;
-        File apkFile = new File(getContext().getCacheDir(), "fadfada-update.apk");
+        File updateDirectory = new File(getContext().getCacheDir(), "fadfada-updates");
+        File apkFile = new File(updateDirectory, "fadfada-update.apk");
         try {
+            if (!updateDirectory.isDirectory() && !updateDirectory.mkdirs()) {
+                throw new IllegalStateException("تعذر تجهيز مجلد تحديث التطبيق.");
+            }
+
             connection = (HttpURLConnection) new URL(rawUrl).openConnection();
             connection.setConnectTimeout(20000);
             connection.setReadTimeout(30000);

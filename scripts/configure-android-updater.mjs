@@ -78,7 +78,7 @@ fs.writeFileSync(manifestPath, manifest);
 fs.mkdirSync(path.dirname(fileProviderPathsPath), { recursive: true });
 const fileProviderPaths = `<?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <cache-path name="update_apk" path="fadfada-update.apk" />
+    <cache-path name="update_apks" path="fadfada-updates/" />
 </paths>
 `;
 fs.writeFileSync(fileProviderPathsPath, fileProviderPaths);

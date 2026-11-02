@@ -4,6 +4,12 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.9.9 — إصلاح تثبيت التحديث | Update installation fix
+
+### أُصلح
+
+- إصلاح مسار APK الذي يشاركه Android FileProvider، كي يتمكن مُثبّت Android من فتح التحديث بعد اكتمال تنزيله.
+
 ## 3.9.8 — إصلاح الحفظ وملاحظات التحديث | Profile save and update notes fix
 
 ### أُصلح
