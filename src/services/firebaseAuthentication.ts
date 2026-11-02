@@ -145,6 +145,13 @@ async function getFirebaseIdToken(): Promise<string> {
 }
 
 async function signInWithGoogle(): Promise<void> {
+  if (
+    Capacitor.getPlatform() === 'android' &&
+    !Capacitor.isPluginAvailable('FirebaseAuthentication')
+  ) {
+    throw new Error('إضافة Firebase الأصلية لتسجيل Google غير متاحة في هذا الإصدار من التطبيق.');
+  }
+
   try {
     await FirebaseAuthentication.signInWithGoogle({ useCredentialManager: true });
   } catch (error) {

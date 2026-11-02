@@ -30,6 +30,21 @@ const googleServicesClasspath = "classpath 'com.google.gms:google-services:4.4.4
 const appGoogleServicesPlugin = "apply plugin: 'com.google.gms.google-services'";
 
 let updatedRootGradle = rootGradle;
+const nativeGoogleSetting = updatedRootGradle.match(/^(\s*rgcfaIncludeGoogle\s*=\s*)(?:true|false)\s*$/m);
+if (nativeGoogleSetting) {
+  updatedRootGradle = updatedRootGradle.replace(nativeGoogleSetting[0], `${nativeGoogleSetting[1]}true`);
+} else {
+  const extensionBlock = updatedRootGradle.match(/ext\s*\{/);
+  if (!extensionBlock || extensionBlock.index === undefined) {
+    throw new Error('Could not locate the Android root Gradle ext block for Google Authentication.');
+  }
+  const insertionPoint = extensionBlock.index + extensionBlock[0].length;
+  updatedRootGradle =
+    updatedRootGradle.slice(0, insertionPoint) +
+    '\n    rgcfaIncludeGoogle = true' +
+    updatedRootGradle.slice(insertionPoint);
+}
+
 if (!updatedRootGradle.includes('com.google.gms:google-services')) {
   const dependenciesBlock = updatedRootGradle.match(/dependencies\s*\{/);
   if (!dependenciesBlock || dependenciesBlock.index === undefined) {
