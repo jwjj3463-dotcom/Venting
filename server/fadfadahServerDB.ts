@@ -255,7 +255,7 @@ export interface ServerAdSettings {
 export const DEFAULT_AD_SETTINGS: ServerAdSettings = {
   enabled: true,
   banner_enabled: true,
-  chat_card_enabled: false,
+  chat_card_enabled: true,
   interstitial_enabled: true,
   rewarded_enabled: false,
   test_mode: true,
@@ -278,6 +278,7 @@ interface PersistedDatabaseShape {
   schemaVersion: number;
   owner_bootstrap_completed?: boolean;
   owner_recovery_completed?: boolean;
+  chat_card_setting_migrated?: boolean;
   users: ServerUserRecord[];
   personal_links: ServerPersonalLink[];
   chat_rooms: ServerChatRoom[];
@@ -360,6 +361,7 @@ export class FadfadahServerDB {
   public adSettings: ServerAdSettings = { ...DEFAULT_AD_SETTINGS };
   public ownerBootstrapCompleted = false;
   public ownerRecoveryCompleted = false;
+  private chatCardSettingMigrated = false;
 
   private flushPromise: Promise<void> = Promise.resolve();
   private flushScheduled = false;
@@ -416,14 +418,21 @@ export class FadfadahServerDB {
           parsed.owner_bootstrap_completed === true ||
           Array.from(this.users.values()).some((user) => user.role === 'owner');
         this.ownerRecoveryCompleted = parsed.owner_recovery_completed === true;
+        this.chatCardSettingMigrated = parsed.chat_card_setting_migrated === true;
         if (parsed.ad_settings) {
           this.adSettings = { ...DEFAULT_AD_SETTINGS, ...parsed.ad_settings };
+        }
+        if (!this.chatCardSettingMigrated) {
+          this.adSettings.chat_card_enabled = true;
+          this.chatCardSettingMigrated = true;
+          this.scheduleSave();
         }
 
       } catch (err) {
         console.error('Failed to read existing fadfadah.db.json, starting fresh:', err);
       }
     } else {
+      this.chatCardSettingMigrated = true;
       await this.flushNow();
     }
   }
@@ -455,6 +464,7 @@ export class FadfadahServerDB {
       manual_payment_methods: this.manualPaymentMethods,
       owner_bootstrap_completed: this.ownerBootstrapCompleted,
       owner_recovery_completed: this.ownerRecoveryCompleted,
+      chat_card_setting_migrated: this.chatCardSettingMigrated,
       ad_settings: this.adSettings,
     };
     const tmpFile = `${DB_FILE}.tmp`;

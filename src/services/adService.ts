@@ -33,7 +33,7 @@ export interface AdConfig {
 export const DEFAULT_AD_CONFIG: AdConfig = {
   enabled: true,
   banner_enabled: true,
-  chat_card_enabled: false,
+  chat_card_enabled: true,
   interstitial_enabled: true,
   rewarded_enabled: false,
   test_mode: true,
