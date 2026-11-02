@@ -117,7 +117,7 @@ jobs:
           );
 
           if (!releaseSha1 || !configuredSha1s.includes(releaseSha1)) {
-            throw new Error('Firebase Google OAuth config does not include the release signing certificate SHA-1.');
+            throw new Error(`Firebase Google OAuth config does not include release signer SHA-1 ${releaseSha1 || 'unknown'}.`);
           }
 
           console.log('Firebase Google OAuth config matches the release signing certificate.');

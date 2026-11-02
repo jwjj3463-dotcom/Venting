@@ -30,6 +30,14 @@
           }
         },
         {
+          "client_id": "1052135859886-b0qhbl8o3cu1o574nogpt05bs9l3ecn7.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.fadfadahnative",
+            "certificate_hash": "c18f8540e4c3639986f6a80d0b1a4ca8bf38155e"
+          }
+        },
+        {
           "client_id": "1052135859886-fe24alqrm2m69q6oibfdduhqp0jj0q4a.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
