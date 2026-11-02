@@ -28,6 +28,46 @@
   }
 }
 
+@property --fadfada-border-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes fadfada-border-beam-orbit {
+  to {
+    --fadfada-border-angle: 360deg;
+  }
+}
+
+.border-beam {
+  position: relative;
+  isolation: isolate;
+}
+
+.border-beam::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1.5px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--fadfada-border-angle),
+    transparent 0 74%,
+    rgb(196 181 253 / 55%) 86%,
+    #c4b5fd 94%,
+    #fde68a 98.5%,
+    transparent 99%
+  );
+  filter: drop-shadow(0 0 5px rgb(167 139 250 / 65%));
+  pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: fadfada-border-beam-orbit 3s linear infinite;
+}
+
 .radar-sweep {
   animation: radar-sweep 5s linear infinite;
 }
@@ -51,6 +91,10 @@
   .radar-sweep,
   .radar-pulse-ring,
   .radar-blip {
+    animation: none;
+  }
+
+  .border-beam::before {
     animation: none;
   }
 }

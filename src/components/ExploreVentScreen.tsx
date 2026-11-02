@@ -4,6 +4,7 @@ import { FramedAvatar, OfficialBadge } from './FramedAvatar';
 import {
   RealmPublicVent,
   RealmUser,
+  isRealmPremiumActive,
 } from '../db/realmLocalDB';
 import { fadfadahClient } from '../services/fadfadahNetworkClient';
 import { AppLang, TRANSLATIONS } from '../i18n/translations';
@@ -41,7 +42,7 @@ export const ExploreVentScreen: React.FC<ExploreVentScreenProps> = ({
   const onlinePeers = useMemo(() => {
     return allUsers
       .filter((u) => !u.is_self && u.is_online && !selfUser.blocked_user_ids.includes(u.id))
-      .sort((a, b) => Number(b.is_premium) - Number(a.is_premium));
+      .sort((a, b) => Number(isRealmPremiumActive(b)) - Number(isRealmPremiumActive(a)));
   }, [allUsers, selfUser.blocked_user_ids]);
 
   const filteredVents = useMemo(() => {
@@ -139,7 +140,7 @@ export const ExploreVentScreen: React.FC<ExploreVentScreenProps> = ({
                   <OfficialBadge role={peer.role} />
                 </span>
                 <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[90px]">
-                  {peer.is_premium ? (lang === 'ar' ? 'أولوية مميزة' : 'VIP Priority') : peer.country}
+                  {isRealmPremiumActive(peer) ? (lang === 'ar' ? 'أولوية مميزة' : 'VIP Priority') : peer.country}
                 </span>
               </button>
             ))}

@@ -58,6 +58,8 @@ export interface ManualPaymentMethodDTO {
 
 export interface ManualTopupRequestDTO {
   id: string;
+  request_type: 'TOPUP' | 'SUBSCRIPTION';
+  premium_plan?: Exclude<PremiumPlan, 'free'>;
   user_id: string;
   user_nickname: string;
   package_title_ar: string;
@@ -82,6 +84,13 @@ export interface ManualTopupConfigDTO {
 }
 
 type ConnectionState = 'connecting' | 'connected' | 'offline';
+type WalletNotice = {
+  status: 'APPROVED' | 'REJECTED';
+  requestType: 'TOPUP' | 'SUBSCRIPTION';
+  points: number;
+  premiumPlan?: Exclude<PremiumPlan, 'free'>;
+  reason: string;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -98,7 +107,7 @@ class FadfadahNetworkClient {
   private typingUsersByRoom = new Map<string, boolean>();
   private stateListeners = new Set<() => void>();
   private manualClose = false;
-  private latestWalletNotice: { status: 'APPROVED' | 'REJECTED'; points: number; reason: string } | null = null;
+  private latestWalletNotice: WalletNotice | null = null;
 
   getServerBaseUrl(): string {
     const customUrl = realmDB.getSettings().custom_server_url?.trim();
@@ -123,7 +132,7 @@ class FadfadahNetworkClient {
     return this.connectionState;
   }
 
-  takeWalletNotice(): { status: 'APPROVED' | 'REJECTED'; points: number; reason: string } | null {
+  takeWalletNotice(): WalletNotice | null {
     const notice = this.latestWalletNotice;
     this.latestWalletNotice = null;
     return notice;
@@ -523,7 +532,7 @@ class FadfadahNetworkClient {
       for (const p of syncData.peers) {
         tx.create('users', {
           ...p,
-          premium_plan: p.is_premium ? 'monthly' : 'free',
+          premium_plan: p.premium_plan ?? (p.is_premium ? 'monthly' : 'free'),
           points: 0,
           unlocked_frames: [0, 1],
           blocked_user_ids: [],
@@ -710,17 +719,36 @@ class FadfadahNetworkClient {
       const status = ev.status === 'APPROVED' ? 'APPROVED' : 'REJECTED';
       const pointsBalance = Number(ev.points_balance);
       const transaction = ev.transaction as RealmPaymentTransaction | undefined;
+      const requestType = ev.request_type === 'SUBSCRIPTION' ? 'SUBSCRIPTION' : 'TOPUP';
+      const premiumPlan =
+        ev.premium_plan === 'weekly' || ev.premium_plan === 'monthly' || ev.premium_plan === 'quarterly'
+          ? ev.premium_plan
+          : undefined;
       await realmDB.write((tx) => {
-        if (Number.isSafeInteger(pointsBalance) && pointsBalance >= 0) {
-          tx.create('users', { ...self, points: pointsBalance });
+        const updatedSelf = {
+          ...self,
+          ...(Number.isSafeInteger(pointsBalance) && pointsBalance >= 0
+            ? { points: pointsBalance }
+            : {}),
+        };
+        if (requestType === 'SUBSCRIPTION' && status === 'APPROVED' && premiumPlan) {
+          tx.create('users', {
+            ...updatedSelf,
+            is_premium: true,
+            premium_plan: premiumPlan,
+            premium_expires_at:
+              typeof ev.premium_expires_at === 'number' ? ev.premium_expires_at : undefined,
+          });
+        } else if (Number.isSafeInteger(pointsBalance) && pointsBalance >= 0) {
+          tx.create('users', updatedSelf);
         }
-        if (transaction) {
-          tx.create('payment_transactions', transaction);
-        }
+        if (transaction) tx.create('payment_transactions', transaction);
       });
       this.latestWalletNotice = {
         status,
+        requestType,
         points: Number(ev.points_delta) || 0,
+        premiumPlan,
         reason: typeof ev.rejection_reason === 'string' ? ev.rejection_reason : '',
       };
       await triggerLightHaptic();
@@ -1576,6 +1604,30 @@ class FadfadahNetworkClient {
     return res.ok
       ? { ok: true, request: data.request }
       : { ok: false, error: data.error || 'تعذر إرسال طلب الشحن.' };
+  }
+
+  async createManualSubscriptionRequest(params: {
+    planId: Exclude<PremiumPlan, 'free'>;
+    paymentMethodId: string;
+    transactionReference: string;
+    proofDataUrl: string;
+    idempotencyKey: string;
+  }): Promise<{ ok: boolean; request?: ManualTopupRequestDTO; error?: string }> {
+    const res = await fetch(`${this.getServerBaseUrl()}/api/payments/manual/requests`, {
+      method: 'POST',
+      headers: { ...this.getAuthHeaders(), 'Idempotency-Key': params.idempotencyKey },
+      body: JSON.stringify({
+        request_type: 'SUBSCRIPTION',
+        plan_id: params.planId,
+        payment_method_id: params.paymentMethodId,
+        transaction_reference: params.transactionReference,
+        proof_data_url: params.proofDataUrl,
+      }),
+    });
+    const data = (await res.json()) as { request?: ManualTopupRequestDTO; error?: string };
+    return res.ok
+      ? { ok: true, request: data.request }
+      : { ok: false, error: data.error || 'تعذر إرسال طلب اشتراك VIP.' };
   }
 
   async getAdminManualTopups(): Promise<ManualTopupRequestDTO[]> {

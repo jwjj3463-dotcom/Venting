@@ -14,6 +14,7 @@ import {
   RealmChatRoom,
   RealmPersonalLink,
   RealmUser,
+  isRealmPremiumActive,
 } from '../db/realmLocalDB';
 import { fadfadahClient } from '../services/fadfadahNetworkClient';
 import { nativeCopyText, nativeShareUrl, openExternalUrl } from '../services/androidNative';
@@ -438,7 +439,7 @@ export const UnifiedInboxScreen: React.FC<UnifiedInboxScreenProps> = ({
         </div>
 
         {/* Real VIP Perks Card (Honest, zero fake ad removal claims) */}
-        {!selfUser.is_premium && (
+        {!isRealmPremiumActive(selfUser) && (
           <div className="rounded-2xl bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border border-[#8B5CF6]/30 p-3.5 flex items-center justify-between gap-3">
             <div className="space-y-0.5">
               <p className="text-xs font-bold text-slate-900 dark:text-white">

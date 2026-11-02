@@ -11,7 +11,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { FramedAvatar, OfficialBadge } from './FramedAvatar';
-import { RealmUser } from '../db/realmLocalDB';
+import { isRealmPremiumActive, RealmUser } from '../db/realmLocalDB';
 import { fadfadahClient, LiveMatchCandidate } from '../services/fadfadahNetworkClient';
 import { AdBanner } from './AdBanner';
 import {
@@ -274,7 +274,7 @@ export const RandomMatchScreen: React.FC<RandomMatchScreenProps> = ({
           </span>
           <span className="font-mono-num">
             {t.dailyQuotaLabel}:{' '}
-            {selfUser.is_premium ? t.unlimited : `${usedToday}/${FREE_DAILY_LIMIT}`}
+            {isRealmPremiumActive(selfUser) ? t.unlimited : `${usedToday}/${FREE_DAILY_LIMIT}`}
           </span>
         </div>
 

@@ -39,6 +39,7 @@ import {
   RealmPaymentTransaction,
   RealmPersonalLink,
   RealmUser,
+  isRealmPremiumActive,
 } from '../db/realmLocalDB';
 import {
   fadfadahClient,
@@ -55,6 +56,12 @@ import {
   AVAILABLE_LANGUAGES,
   TRANSLATIONS,
 } from '../i18n/translations';
+
+const MANUAL_VIP_PLANS = [
+  { id: 'weekly', titleAr: 'أسبوعية', titleEn: 'Weekly', price: '$2.99', bonus: 150 },
+  { id: 'monthly', titleAr: 'شهرية', titleEn: 'Monthly', price: '$7.99', bonus: 500 },
+  { id: 'quarterly', titleAr: '3 أشهر', titleEn: '3 Months', price: '$18.99', bonus: 1500 },
+] as const;
 
 const PROFILE_AVATAR_REQUEST_LIMIT = 700_000;
 
@@ -149,10 +156,15 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
   const [manualTopupRequests, setManualTopupRequests] = useState<ManualTopupRequestDTO[]>([]);
   const [selectedTopupPackage, setSelectedTopupPackage] = useState('');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');
+  const [selectedVipPlan, setSelectedVipPlan] = useState<Exclude<PremiumPlan, 'free'> | ''>('');
   const [transactionReference, setTransactionReference] = useState('');
   const [paymentProof, setPaymentProof] = useState('');
   const [submittingTopup, setSubmittingTopup] = useState(false);
   const topupIdempotencyKey = useRef(generateUUID());
+  const [vipTransactionReference, setVipTransactionReference] = useState('');
+  const [vipPaymentProof, setVipPaymentProof] = useState('');
+  const [submittingVip, setSubmittingVip] = useState(false);
+  const vipIdempotencyKey = useRef(generateUUID());
 
   const avatarUploadRef = useRef<HTMLInputElement | null>(null);
 
@@ -243,13 +255,13 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
     const def = PROFILE_FRAMES.find((f) => f.id === targetFrameId);
     if (!def) return;
 
-    const isUnlocked = selfUser.is_premium || selfUser.unlocked_frames.includes(targetFrameId);
+    const isUnlocked = isRealmPremiumActive(selfUser) || selfUser.unlocked_frames.includes(targetFrameId);
     if (isUnlocked) {
       setFrameId(targetFrameId);
       return;
     }
 
-    if (def.premiumOnly && !selfUser.is_premium) {
+    if (def.premiumOnly && !isRealmPremiumActive(selfUser)) {
       setSubView('monetization');
       return;
     }
@@ -311,26 +323,10 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
     }
   };
 
-  // Real Server-Verified Checkout (Idempotent & Audited in Server Database)
-  const handleCheckoutPlan = async (planKey: string) => {
-    setSaveToast(lang === 'ar' ? 'جارٍ التحقق من عملية الدفع في السيرفر...' : 'Verifying payment on server...');
-    const res = await fadfadahClient.checkoutPackage({
-      type: 'SUBSCRIPTION',
-      packageId: planKey,
-    });
-    if (!res.ok) {
-      setSaveToast(res.error || 'فشلت عملية الدفع.');
-      return;
-    }
-    setSaveToast(
-      lang === 'ar'
-        ? 'تم التحقق من الدفع وتفعيل الباقة بنجاح وتسجيلها في السجل المالي!'
-        : 'Payment verified and subscription activated!'
-    );
-    setTimeout(() => setSaveToast(''), 3000);
-  };
-
-  const handleManualTopupProofUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleManualProofUpload = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setProof: React.Dispatch<React.SetStateAction<string>>
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
@@ -344,10 +340,64 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => setPaymentProof(String(reader.result || ''));
+    reader.onload = () => setProof(String(reader.result || ''));
     reader.onerror = () => setSaveToast(lang === 'ar' ? 'تعذرت قراءة صورة الإثبات.' : 'Could not read the proof image.');
     reader.readAsDataURL(file);
     e.target.value = '';
+  };
+
+  const handleSubmitManualSubscription = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (submittingVip || !selectedVipPlan) return;
+    setSubmittingVip(true);
+    setSaveToast('');
+    try {
+      const result = await fadfadahClient.createManualSubscriptionRequest({
+        planId: selectedVipPlan,
+        paymentMethodId: selectedPaymentMethod,
+        transactionReference: vipTransactionReference,
+        proofDataUrl: vipPaymentProof,
+        idempotencyKey: vipIdempotencyKey.current,
+      });
+      if (!result.ok || !result.request) {
+        const error = result.error || '';
+        setSaveToast(
+          error === 'TRANSACTION_REFERENCE_ALREADY_USED'
+            ? lang === 'ar'
+              ? 'رقم العملية مستخدم في طلب آخر.'
+              : 'This transfer reference is already used.'
+            : error === 'INVALID_PAYMENT_PROOF'
+              ? lang === 'ar'
+                ? 'ملف الإثبات غير صالح أو أكبر من الحد المسموح.'
+                : 'The proof image is invalid or exceeds the size limit.'
+              : error === 'INVALID_PACKAGE_OR_PAYMENT_METHOD'
+                ? lang === 'ar'
+                  ? 'وسيلة الدفع لم تعد متاحة. حدّث الصفحة وحاول مجددًا.'
+                  : 'The payment method is no longer available. Refresh and retry.'
+                : error || (lang === 'ar' ? 'تعذر إرسال طلب اشتراك VIP.' : 'Could not submit the VIP request.')
+        );
+        return;
+      }
+      setManualTopupRequests((requests) => [result.request!, ...requests]);
+      setVipTransactionReference('');
+      setVipPaymentProof('');
+      vipIdempotencyKey.current = generateUUID();
+      setSaveToast(
+        lang === 'ar'
+          ? 'تم إرسال طلب اشتراك VIP إلى الإدارة، وسيُفعّل بعد مراجعة التحويل.'
+          : 'VIP subscription request sent; it will activate after transfer review.'
+      );
+    } catch (error) {
+      setSaveToast(
+        error instanceof Error
+          ? error.message
+          : lang === 'ar'
+            ? 'تعذر إرسال طلب اشتراك VIP.'
+            : 'Could not submit the VIP request.'
+      );
+    } finally {
+      setSubmittingVip(false);
+    }
   };
 
   const handleSubmitManualTopup = async (e: React.FormEvent) => {
@@ -493,12 +543,11 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
           </div>
         </div>
 
-        {/* Real VIP Perks Card */}
-        <div className="rounded-3xl bg-[#2D1B69] text-white p-6 space-y-4">
+        <div className="border-beam relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#2D1B69] via-[#241753] to-[#151221] p-6 text-white shadow-xl shadow-purple-950/20 space-y-4">
           <div className="flex items-center gap-2.5">
             <Crown className="w-6 h-6 text-amber-300 shrink-0" />
             <h2 className="text-lg font-bold">
-              {lang === 'ar' ? 'باقات فضفضة المميزة (تحقق فوري من السيرفر)' : 'Fadfadah VIP Subscriptions'}
+              {lang === 'ar' ? 'باقات فضفضة المميزة' : 'Fadfadah VIP Subscriptions'}
             </h2>
           </div>
           <p className="text-xs text-purple-100/85 leading-relaxed">
@@ -508,37 +557,152 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-            {[
-              { id: 'weekly', titleAr: 'أسبوعية', titleEn: 'Weekly', price: '$2.99', bonus: 150 },
-              { id: 'monthly', titleAr: 'شهرية', titleEn: 'Monthly', price: '$7.99', bonus: 500 },
-              { id: 'quarterly', titleAr: '3 أشهر', titleEn: '3 Months', price: '$18.99', bonus: 1500 },
-            ].map((pkg) => {
-              const active = selfUser.premium_plan === pkg.id && selfUser.is_premium;
+            {MANUAL_VIP_PLANS.map((pkg) => {
+              const active = selfUser.premium_plan === pkg.id && isRealmPremiumActive(selfUser);
+              const selected = selectedVipPlan === pkg.id;
               return (
                 <button
                   key={pkg.id}
                   type="button"
-                  onClick={() => handleCheckoutPlan(pkg.id)}
-                  className={`p-4 rounded-2xl text-start border transition-colors flex flex-col justify-between gap-3 ${
-                    active
-                      ? 'bg-[#8B5CF6] border-white text-white'
-                      : 'bg-white/10 active:bg-white/20 border-white/15 text-white'
+                  onClick={() => setSelectedVipPlan(pkg.id)}
+                  aria-pressed={selected}
+                  className={`rounded-2xl border p-4 text-start transition-all flex flex-col justify-between gap-3 ${
+                    selected
+                      ? 'bg-white/20 border-amber-200 ring-2 ring-amber-300/50 text-white'
+                      : 'bg-white/5 active:bg-white/15 border-white/15 text-white'
                   }`}
                 >
                   <div>
                     <p className="text-sm font-bold">{lang === 'ar' ? pkg.titleAr : pkg.titleEn}</p>
                     <p className="text-xl font-bold font-mono-num mt-1">{pkg.price}</p>
                     <p className="text-[11px] text-purple-200 mt-1">
-                      +{pkg.bonus} {lang === 'ar' ? 'نقطة رصيدية' : 'bonus pts'}
+                      +{pkg.bonus} {lang === 'ar' ? 'نقطة ترحيبية' : 'bonus points'}
                     </p>
                   </div>
-                  <span className="text-xs font-semibold underline">
-                    {active ? (lang === 'ar' ? 'مفعّلة ومؤكدة' : 'Active') : lang === 'ar' ? 'شراء وتفعيل' : 'Subscribe'}
+                  <span className="text-xs font-semibold">
+                    {active ? (lang === 'ar' ? 'تجديد الاشتراك' : 'Renew subscription') : lang === 'ar' ? 'اختر الباقة' : 'Select plan'}
                   </span>
                 </button>
               );
             })}
           </div>
+
+          {isRealmPremiumActive(selfUser) && selfUser.premium_expires_at && (
+            <p className="text-[11px] text-purple-100">
+              {lang === 'ar' ? 'ينتهي اشتراكك الحالي في: ' : 'Current subscription expires: '}
+              {new Date(selfUser.premium_expires_at).toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US')}
+            </p>
+          )}
+
+          {selectedVipPlan && (
+            manualTopupConfig.payment_methods.length === 0 ? (
+              <div className="rounded-2xl border border-amber-200/30 bg-amber-300/10 p-4 text-xs leading-relaxed text-amber-100">
+                {lang === 'ar'
+                  ? 'طلبات اشتراك VIP غير متاحة حتى يضيف المالك وسيلة دفع من لوحة الإدارة.'
+                  : 'VIP requests are unavailable until the owner configures a payment method in the admin panel.'}
+              </div>
+            ) : (
+              <form onSubmit={handleSubmitManualSubscription} className="space-y-3 rounded-2xl border border-white/10 bg-black/20 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold">
+                      {lang === 'ar' ? 'طلب اشتراك يدوي' : 'Manual subscription request'}
+                    </p>
+                    <p className="mt-1 text-[11px] text-purple-100">
+                      {MANUAL_VIP_PLANS.find((plan) => plan.id === selectedVipPlan)?.price}
+                      {' · '}
+                      +{MANUAL_VIP_PLANS.find((plan) => plan.id === selectedVipPlan)?.bonus}
+                      {' '}{lang === 'ar' ? 'نقطة ترحيبية' : 'bonus points'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedVipPlan('')}
+                    className="min-h-10 rounded-xl bg-white/10 px-3 text-xs font-semibold"
+                  >
+                    {lang === 'ar' ? 'إلغاء' : 'Cancel'}
+                  </button>
+                </div>
+
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-bold">{lang === 'ar' ? 'وسيلة الدفع' : 'Payment method'}</span>
+                  <select
+                    value={selectedPaymentMethod}
+                    onChange={(e) => setSelectedPaymentMethod(e.target.value)}
+                    className="w-full min-h-[46px] rounded-xl border border-white/10 bg-[#151221] px-3 text-sm text-white"
+                    required
+                  >
+                    {manualTopupConfig.payment_methods.map((method) => (
+                      <option key={method.id} value={method.id}>
+                        {lang === 'ar' ? method.title_ar : method.title_en}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {(() => {
+                  const method = manualTopupConfig.payment_methods.find(
+                    (item) => item.id === selectedPaymentMethod
+                  );
+                  return method ? (
+                    <div className="rounded-xl border border-purple-300/20 bg-purple-400/10 p-3">
+                      <p className="text-xs font-bold text-purple-100">
+                        {lang === 'ar' ? method.title_ar : method.title_en}
+                      </p>
+                      <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-purple-100/80">
+                        {lang === 'ar' ? method.instructions_ar : method.instructions_en}
+                      </p>
+                    </div>
+                  ) : null;
+                })()}
+
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-bold">{lang === 'ar' ? 'رقم العملية' : 'Transfer reference'}</span>
+                  <input
+                    value={vipTransactionReference}
+                    onChange={(e) => setVipTransactionReference(e.target.value)}
+                    minLength={3}
+                    maxLength={100}
+                    required
+                    className="w-full min-h-[44px] rounded-xl border border-white/10 bg-[#151221] px-3 text-sm text-white"
+                    placeholder={lang === 'ar' ? 'أدخل رقم التحويل' : 'Enter transfer reference'}
+                  />
+                </label>
+
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-bold">{lang === 'ar' ? 'إثبات الدفع' : 'Payment proof'}</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(e) => handleManualProofUpload(e, setVipPaymentProof)}
+                    required={!vipPaymentProof}
+                    className="block w-full text-xs text-purple-100 file:me-3 file:rounded-lg file:border-0 file:bg-white/15 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white"
+                  />
+                </label>
+                {vipPaymentProof && (
+                  <img
+                    src={vipPaymentProof}
+                    alt={lang === 'ar' ? 'معاينة إثبات الدفع' : 'Payment proof preview'}
+                    className="max-h-40 rounded-xl border border-white/10 object-contain"
+                  />
+                )}
+                <button
+                  type="submit"
+                  disabled={
+                    submittingVip ||
+                    !selectedPaymentMethod ||
+                    vipTransactionReference.trim().length < 3 ||
+                    !vipPaymentProof
+                  }
+                  className="w-full min-h-[48px] rounded-xl bg-gradient-to-r from-amber-300 to-amber-500 text-[#241753] text-sm font-bold disabled:opacity-50"
+                >
+                  {submittingVip
+                    ? lang === 'ar' ? 'جارٍ إرسال الطلب...' : 'Submitting...'
+                    : lang === 'ar' ? 'إرسال طلب VIP للمراجعة' : 'Submit VIP request for review'}
+                </button>
+              </form>
+            )
+          )}
         </div>
 
         {/* Server-verified manual wallet top-ups */}
@@ -649,7 +813,7 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
                 <input
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
-                  onChange={handleManualTopupProofUpload}
+                  onChange={(e) => handleManualProofUpload(e, setPaymentProof)}
                   required={!paymentProof}
                   className="w-full text-xs text-slate-500 file:me-3 file:min-h-[40px] file:px-3 file:rounded-xl file:border-0 file:bg-slate-100 dark:file:bg-white/10 file:text-slate-700 dark:file:text-slate-200"
                 />
@@ -687,17 +851,22 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
         {manualTopupRequests.length > 0 && (
           <div className="rounded-3xl bg-white dark:bg-[#1E1B2E] border border-slate-200 dark:border-white/10 p-6 space-y-3">
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              {lang === 'ar' ? 'طلبات الشحن' : 'Top-up requests'}
+              {lang === 'ar' ? 'طلبات الدفع اليدوي' : 'Manual payment requests'}
             </h3>
             <div className="divide-y divide-slate-100 dark:divide-white/10">
               {manualTopupRequests.map((request) => (
                 <div key={request.id} className="py-3 flex items-start justify-between gap-3 text-xs">
                   <div className="min-w-0">
                     <p className="font-bold text-slate-900 dark:text-white">
+                      {request.request_type === 'SUBSCRIPTION' &&
+                        (lang === 'ar' ? 'اشتراك VIP · ' : 'VIP subscription · ')}
                       {lang === 'ar' ? request.package_title_ar : request.package_title_en}
                     </p>
                     <p className="mt-1 text-slate-500 font-mono-num">
-                      {request.amount} {request.currency} · {request.points} {lang === 'ar' ? 'نقطة' : 'points'}
+                      {request.amount} {request.currency} · {request.points}{' '}
+                      {request.request_type === 'SUBSCRIPTION'
+                        ? lang === 'ar' ? 'نقطة ترحيبية' : 'bonus points'
+                        : lang === 'ar' ? 'نقطة' : 'points'}
                     </p>
                     <p className="mt-1 text-[11px] text-slate-400 break-all">
                       {lang === 'ar' ? 'رقم العملية: ' : 'Reference: '}{request.transaction_reference}
@@ -992,7 +1161,7 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
             )}
           </div>
           <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 mt-0.5">
-            {selfUser.is_premium ? t.premiumBadge : t.freeTierBadge} ·{' '}
+            {isRealmPremiumActive(selfUser) ? t.premiumBadge : t.freeTierBadge} ·{' '}
             <span className="font-mono-num">{selfUser.points}</span>{' '}
             {lang === 'ar' ? 'نقطة' : 'pts'}
           </p>
@@ -1110,7 +1279,7 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
             {PROFILE_FRAMES.map((fr) => {
-              const unlocked = selfUser.is_premium || selfUser.unlocked_frames.includes(fr.id);
+              const unlocked = isRealmPremiumActive(selfUser) || selfUser.unlocked_frames.includes(fr.id);
               const selected = frameId === fr.id;
               return (
                 <button
@@ -1339,7 +1508,7 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
       {/* Discreet Version & Protected Admin Trigger */}
       <div className="pt-2 pb-6 text-center space-y-1">
         <p className="text-[11px] text-slate-400 dark:text-slate-500 font-mono-num">
-          فضفضة · الإصدار 3.10.1 (مستقر)
+          فضفضة · الإصدار 3.10.5 (مستقر)
         </p>
         {!isStaff && (
           <button

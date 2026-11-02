@@ -22,6 +22,8 @@ import {
   type ServerManualTopupRequest,
   type ServerManualTopupPackage,
   type ServerManualPaymentMethod,
+  type ManualPaymentRequestType,
+  type PremiumPlan,
   type UserRole,
   type AccountStatus,
   type ReportTargetType,
@@ -30,6 +32,43 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const MANUAL_SUBSCRIPTION_PLANS: Record<
+  Exclude<PremiumPlan, 'free'>,
+  {
+    title_ar: string;
+    title_en: string;
+    points: number;
+    amount: number;
+    currency: string;
+    duration_days: number;
+  }
+> = {
+  weekly: {
+    title_ar: 'اشتراك VIP أسبوعي',
+    title_en: 'Weekly VIP subscription',
+    points: 150,
+    amount: 2.99,
+    currency: 'USD',
+    duration_days: 7,
+  },
+  monthly: {
+    title_ar: 'اشتراك VIP شهري',
+    title_en: 'Monthly VIP subscription',
+    points: 500,
+    amount: 7.99,
+    currency: 'USD',
+    duration_days: 30,
+  },
+  quarterly: {
+    title_ar: 'اشتراك VIP لمدة 3 أشهر',
+    title_en: '3-month VIP subscription',
+    points: 1500,
+    amount: 18.99,
+    currency: 'USD',
+    duration_days: 90,
+  },
+};
 
 // Optional Gemini AI upgrade (server works 100% standalone without any API key too!)
 function getAiClient(): GoogleGenAI | null {
@@ -284,7 +323,7 @@ async function startServer() {
           sim * 0.65 +
           (inQueue ? 0.25 : 0) +
           (online ? 0.12 : 0) +
-          (peer.is_premium ? 0.15 : 0);
+          (serverDB.isPremiumActive(peer) ? 0.15 : 0);
         return {
           peer: serverDB.toPublicUser(peer, online),
           inQueue,
@@ -453,7 +492,7 @@ async function startServer() {
     res.json({
       ok: true,
       package: 'com.fadfadahnative',
-      version: '3.10.3',
+      version: '3.10.5',
       onlineUsers: activeSockets.size,
       totalRegisteredUsers: serverDB.users.size,
     });
@@ -625,7 +664,7 @@ async function startServer() {
     if (country) user.country = country.slice(0, 32);
     if (typeof bio === 'string') user.bio = bio.trim().slice(0, 120);
     if (avatar_url) user.avatar_url = avatar_url;
-    if (typeof frame_id === 'number' && (user.is_premium || user.unlocked_frames.includes(frame_id))) {
+    if (typeof frame_id === 'number' && (serverDB.isPremiumActive(user) || user.unlocked_frames.includes(frame_id))) {
       user.frame_id = frame_id;
     }
     if (Array.isArray(interests) && interests.length > 0) {
@@ -858,7 +897,7 @@ async function startServer() {
     // Free Tier Daily Quota: 5/day unless Premium
     const todayStr = new Date().toISOString().slice(0, 10);
     const usedToday = user.last_random_date === todayStr ? user.daily_random_count : 0;
-    if (!user.is_premium && usedToday >= 5) {
+    if (!serverDB.isPremiumActive(user) && usedToday >= 5) {
       res.status(429).json({ error: 'DAILY_QUOTA_REACHED' });
       return;
     }
@@ -1009,13 +1048,43 @@ async function startServer() {
     }
 
     const cleanContent = (content || '').trim().slice(0, 2000);
-    const mType: MediaType = media_type || 'text';
+    const mType: MediaType =
+      media_type === 'image' || media_type === 'sticker' || media_type === 'text'
+        ? media_type
+        : 'text';
     if (!cleanContent && !media_url) {
       res.status(400).json({ error: 'EMPTY_MESSAGE' });
       return;
     }
 
-    const isImg = mType === 'image' && media_url?.startsWith('data:image/');
+    const imageMatch =
+      mType === 'image' && typeof media_url === 'string'
+        ? /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(media_url)
+        : null;
+    if (mType === 'image') {
+      if (!imageMatch) {
+        res.status(400).json({ error: 'INVALID_IMAGE_ATTACHMENT' });
+        return;
+      }
+      const imageBytes = Buffer.from(imageMatch[2], 'base64');
+      const mimeType = `image/${imageMatch[1]}`;
+      const hasValidSignature =
+        mimeType === 'image/png'
+          ? imageBytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+          : mimeType === 'image/jpeg'
+            ? imageBytes.length >= 3 &&
+              imageBytes[0] === 255 &&
+              imageBytes[1] === 216 &&
+              imageBytes[2] === 255
+            : imageBytes.length >= 12 &&
+              imageBytes.toString('ascii', 0, 4) === 'RIFF' &&
+              imageBytes.toString('ascii', 8, 12) === 'WEBP';
+      if (!imageBytes.length || imageBytes.length > 650 * 1024 || !hasValidSignature) {
+        res.status(400).json({ error: 'INVALID_IMAGE_ATTACHMENT' });
+        return;
+      }
+    }
+    const isImg = Boolean(imageMatch);
     const mod =
       mType === 'sticker'
         ? { flagScore: 0, isFrozen: false, reasonAr: '', reasonEn: '' }
@@ -1364,6 +1433,8 @@ async function startServer() {
 
   const publicManualTopupRequest = (request: ServerManualTopupRequest) => ({
     id: request.id,
+    request_type: request.request_type || 'TOPUP',
+    premium_plan: request.premium_plan,
     user_id: request.user_id,
     user_nickname: request.user_nickname,
     package_title_ar: request.package_title_ar,
@@ -1411,8 +1482,13 @@ async function startServer() {
     }
     if (!verifyAccountActive(user, res)) return;
 
+    const body = (req.body || {}) as Record<string, unknown>;
     const { package_id: packageId, payment_method_id: paymentMethodId, transaction_reference: reference, proof_data_url: proofDataUrl } =
-      (req.body || {}) as Record<string, unknown>;
+      body;
+    const requestedType = body.request_type;
+    const requestType: ManualPaymentRequestType =
+      requestedType === 'SUBSCRIPTION' ? 'SUBSCRIPTION' : 'TOPUP';
+    const planId = body.plan_id;
     const idempotencyKey = String(req.get('Idempotency-Key') || '');
     if (!/^[a-f0-9-]{36}$/i.test(idempotencyKey)) {
       res.status(400).json({ error: 'INVALID_IDEMPOTENCY_KEY' });
@@ -1427,12 +1503,41 @@ async function startServer() {
       return;
     }
 
-    const pack = serverDB.manualTopupPackages.find((item) => item.id === packageId && item.enabled);
+    if (requestedType !== undefined && requestedType !== 'TOPUP' && requestedType !== 'SUBSCRIPTION') {
+      res.status(400).json({ error: 'INVALID_MANUAL_PAYMENT_TYPE' });
+      return;
+    }
+    const topupPackage =
+      requestType === 'TOPUP'
+        ? serverDB.manualTopupPackages.find((item) => item.id === packageId && item.enabled)
+        : undefined;
+    const subscriptionPlan =
+      requestType === 'SUBSCRIPTION' &&
+      (planId === 'weekly' || planId === 'monthly' || planId === 'quarterly')
+        ? MANUAL_SUBSCRIPTION_PLANS[planId]
+        : undefined;
     const method = serverDB.manualPaymentMethods.find((item) => item.id === paymentMethodId && item.enabled);
-    if (!pack || !method) {
+    if ((!topupPackage && !subscriptionPlan) || !method) {
       res.status(400).json({ error: 'INVALID_PACKAGE_OR_PAYMENT_METHOD' });
       return;
     }
+    const item = topupPackage
+      ? {
+          id: topupPackage.id,
+          title_ar: topupPackage.title_ar,
+          title_en: topupPackage.title_en,
+          points: topupPackage.points,
+          amount: topupPackage.amount,
+          currency: topupPackage.currency,
+        }
+      : {
+          id: planId as Exclude<PremiumPlan, 'free'>,
+          title_ar: subscriptionPlan!.title_ar,
+          title_en: subscriptionPlan!.title_en,
+          points: subscriptionPlan!.points,
+          amount: subscriptionPlan!.amount,
+          currency: subscriptionPlan!.currency,
+        };
     if (typeof reference !== 'string' || reference.trim().length < 3 || reference.trim().length > 100) {
       res.status(400).json({ error: 'INVALID_TRANSACTION_REFERENCE' });
       return;
@@ -1494,14 +1599,16 @@ async function startServer() {
 
     const request: ServerManualTopupRequest = {
       id,
+      request_type: requestType,
+      premium_plan: requestType === 'SUBSCRIPTION' ? (planId as Exclude<PremiumPlan, 'free'>) : undefined,
       user_id: user.id,
       user_nickname: user.nickname,
-      package_id: pack.id,
-      package_title_ar: pack.title_ar,
-      package_title_en: pack.title_en,
-      points: pack.points,
-      amount: pack.amount,
-      currency: pack.currency,
+      package_id: item.id,
+      package_title_ar: item.title_ar,
+      package_title_en: item.title_en,
+      points: item.points,
+      amount: item.amount,
+      currency: item.currency,
       payment_method_id: method.id,
       payment_method_title_ar: method.title_ar,
       payment_method_title_en: method.title_en,
@@ -1584,6 +1691,13 @@ async function startServer() {
       res.status(409).json({ error: 'MANUAL_TOPUP_ALREADY_REVIEWED' });
       return;
     }
+    if (
+      request.request_type === 'SUBSCRIPTION' &&
+      (!request.premium_plan || !MANUAL_SUBSCRIPTION_PLANS[request.premium_plan])
+    ) {
+      res.status(400).json({ error: 'INVALID_MANUAL_SUBSCRIPTION' });
+      return;
+    }
 
     const decision = (req.body || {}) as { decision?: unknown; reason?: unknown };
     if (decision.decision !== 'APPROVE' && decision.decision !== 'REJECT') {
@@ -1607,17 +1721,32 @@ async function startServer() {
     const previousReviewedAt = request.reviewed_at;
     const previousReviewer = request.reviewed_by;
     const previousReason = request.rejection_reason;
+    const previousPremium = {
+      is_premium: targetUser.is_premium,
+      premium_plan: targetUser.premium_plan,
+      premium_expires_at: targetUser.premium_expires_at,
+    };
     let transaction: ServerPaymentTransaction | undefined;
     if (decision.decision === 'APPROVE') {
       targetUser.points += request.points;
+      if (request.request_type === 'SUBSCRIPTION' && request.premium_plan) {
+        const plan = MANUAL_SUBSCRIPTION_PLANS[request.premium_plan];
+        const currentExpiry = serverDB.isPremiumActive(targetUser)
+          ? targetUser.premium_expires_at
+          : undefined;
+        const startAt = Math.max(currentExpiry ?? Date.now(), Date.now());
+        targetUser.is_premium = true;
+        targetUser.premium_plan = request.premium_plan;
+        targetUser.premium_expires_at = startAt + plan.duration_days * 24 * 60 * 60 * 1000;
+      }
       transaction = {
         id: crypto.randomUUID(),
         user_id: targetUser.id,
         user_nickname: targetUser.nickname,
-        type: 'MANUAL_TOPUP',
+        type: request.request_type === 'SUBSCRIPTION' ? 'SUBSCRIPTION' : 'MANUAL_TOPUP',
         item_id: request.package_id,
         item_title: request.package_title_ar,
-        amount_usd: 0,
+        amount_usd: request.currency === 'USD' ? request.amount : 0,
         amount_currency: `${request.amount} ${request.currency}`,
         points_delta: request.points,
         status: 'COMPLETED',
@@ -1637,6 +1766,9 @@ async function startServer() {
       await serverDB.flushNow();
     } catch (error) {
       targetUser.points = previousPoints;
+      targetUser.is_premium = previousPremium.is_premium;
+      targetUser.premium_plan = previousPremium.premium_plan;
+      targetUser.premium_expires_at = previousPremium.premium_expires_at;
       request.status = previousStatus;
       request.reviewed_at = previousReviewedAt;
       request.reviewed_by = previousReviewer;
@@ -1654,8 +1786,12 @@ async function startServer() {
       type: 'wallet:manual_topup_decision',
       request_id: request.id,
       status: request.status,
+      request_type: request.request_type || 'TOPUP',
+      premium_plan: request.premium_plan,
       points_delta: transaction?.points_delta ?? 0,
       points_balance: targetUser.points,
+      is_premium: targetUser.is_premium,
+      premium_expires_at: targetUser.premium_expires_at,
       rejection_reason: request.rejection_reason || '',
       transaction,
     });
@@ -1791,7 +1927,7 @@ async function startServer() {
         res.status(400).json({ error: 'INVALID_FRAME' });
         return;
       }
-      if (frameConfig.vipOnly && !user.is_premium) {
+      if (frameConfig.vipOnly && !serverDB.isPremiumActive(user)) {
         res.status(403).json({ error: 'VIP_FRAME_REQUIRED' });
         return;
       }
@@ -2137,7 +2273,7 @@ async function startServer() {
     const bannedUsers = allUsers.filter((u) => u.status === 'banned').length;
     const suspendedUsers = allUsers.filter((u) => u.status === 'suspended').length;
     const restrictedUsers = allUsers.filter((u) => u.status === 'restricted').length;
-    const premiumUsers = allUsers.filter((u) => u.is_premium).length;
+    const premiumUsers = allUsers.filter((u) => serverDB.isPremiumActive(u)).length;
 
     const totalRevenueUsd = payments.reduce((sum, tx) => sum + (tx.amount_usd || 0), 0);
 
@@ -2184,8 +2320,9 @@ async function startServer() {
         country: u.country,
         role: u.role,
         status: u.status,
-        is_premium: u.is_premium,
+        is_premium: serverDB.isPremiumActive(u),
         premium_plan: u.premium_plan,
+        premium_expires_at: u.premium_expires_at,
         points: u.points,
         warning_message: u.warning_message,
         restriction_reason: u.restriction_reason,

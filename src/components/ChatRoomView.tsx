@@ -38,6 +38,51 @@ const EXPRESSIVE_STICKERS = [
   { id: 'smile', labelAr: 'شكراً جزيلاً', labelEn: 'Thank you', symbol: '🌸' },
 ];
 
+const MAX_CHAT_IMAGE_SIZE = 2.5 * 1024 * 1024;
+const MAX_CHAT_IMAGE_PAYLOAD_SIZE = 650 * 1024;
+
+async function prepareChatImage(file: File): Promise<string> {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    throw new Error('UNSUPPORTED_IMAGE_TYPE');
+  }
+
+  const bitmap = await createImageBitmap(file);
+  try {
+    let scale = Math.min(1, 1280 / Math.max(bitmap.width, bitmap.height));
+    for (let resizeAttempt = 0; resizeAttempt < 5; resizeAttempt += 1) {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('IMAGE_PROCESSING_FAILED');
+      context.fillStyle = '#fff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+
+      let quality = 0.82;
+      for (let qualityAttempt = 0; qualityAttempt < 5; qualityAttempt += 1) {
+        const blob = await new Promise<Blob | null>((resolve) =>
+          canvas.toBlob(resolve, 'image/jpeg', quality)
+        );
+        if (!blob) throw new Error('IMAGE_PROCESSING_FAILED');
+        if (blob.size <= MAX_CHAT_IMAGE_PAYLOAD_SIZE) {
+          return await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(new Error('IMAGE_PROCESSING_FAILED'));
+            reader.readAsDataURL(blob);
+          });
+        }
+        quality -= 0.1;
+      }
+      scale *= 0.75;
+    }
+  } finally {
+    bitmap.close();
+  }
+  throw new Error('IMAGE_TOO_LARGE_AFTER_COMPRESSION');
+}
+
 export const ChatRoomView: React.FC<ChatRoomViewProps> = ({
   room,
   selfUser,
@@ -143,16 +188,16 @@ export const ChatRoomView: React.FC<ChatRoomViewProps> = ({
   const handleImageAttach = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 2.5 * 1024 * 1024) {
+    e.target.value = '';
+    if (file.size > MAX_CHAT_IMAGE_SIZE) {
       setModerationNotice(
         lang === 'ar' ? 'حجم الصورة يتجاوز الحد المسموح (2.5 ميجابايت).' : 'Image exceeds 2.5MB limit.'
       );
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const dataUrl = String(reader.result);
+    try {
+      const dataUrl = await prepareChatImage(file);
       setModerationNotice(
         lang === 'ar' ? 'جارٍ فحص وإرسال الصورة...' : 'Scanning & sending image...'
       );
@@ -164,13 +209,30 @@ export const ChatRoomView: React.FC<ChatRoomViewProps> = ({
       setModerationNotice('');
       if (res.isFrozen || !res.ok) {
         setModerationNotice(
-          res.reason ||
-            (lang === 'ar' ? 'تم رفض الصورة المرفقة لمعايير الأمان.' : 'Image rejected by moderation.')
+          res.reason === 'INVALID_IMAGE_ATTACHMENT'
+            ? lang === 'ar'
+              ? 'الصورة غير صالحة أو يتجاوز حجمها الحد الآمن للإرسال.'
+              : 'The image is invalid or exceeds the safe sending size.'
+            : res.reason ||
+                (lang === 'ar' ? 'تم رفض الصورة المرفقة لمعايير الأمان.' : 'Image rejected by moderation.')
         );
       }
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : '';
+      setModerationNotice(
+        reason === 'UNSUPPORTED_IMAGE_TYPE'
+            ? lang === 'ar'
+              ? 'صيغة الصورة غير مدعومة. استخدم JPG أو PNG أو WebP.'
+              : 'Unsupported image format. Use JPG, PNG, or WebP.'
+            : reason === 'IMAGE_TOO_LARGE_AFTER_COMPRESSION'
+              ? lang === 'ar'
+                ? 'تعذر تجهيز الصورة بالحجم المناسب للإرسال.'
+                : 'The image could not be reduced enough to send.'
+              : lang === 'ar'
+                ? 'تعذرت معالجة الصورة أو إرسالها.'
+                : 'Could not process or send the image.'
+      );
+    }
   };
 
   const handleConfirmBlock = async () => {

@@ -4,6 +4,22 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.10.5 — اشتراكات VIP اليدوية وإصلاح إرسال الصور | Manual VIP subscriptions and image sending
+
+### أُضيف وأُصلح
+
+- ربط باقات VIP بالدفع اليدوي؛ تظهر الطلبات في لوحة الإدارة، ولا يتفعّل الاشتراك أو تضاف نقاطه الترحيبية إلا بعد موافقة المالك.
+- تطبيق مدد الباقات الأسبوعية والشهرية وربع السنوية، مع تمديد الاشتراك النشط عند التجديد.
+- تحسين نافذة تحديث Android وقسم VIP بتأثير Border Beam، دون تغيير خطوات تنزيل التحديث وتثبيته.
+- ضغط صور المحادثات الخاصة والتحقق من نوعها وحجمها قبل الإرسال لتفادي فشل الطلبات الكبيرة.
+
+### Added and fixed
+
+- Connect VIP plans to manual payment review; approval activates the subscription and credits its bonus points exactly once.
+- Enforce weekly, monthly, and quarterly subscription durations; renewals extend an active subscription.
+- Refresh the Android update prompt and VIP card with a Border Beam effect without changing the download/install flow.
+- Compress and validate private-chat images before sending to avoid oversized requests.
+
 ## 3.10.4 — إصلاح تسجيل Google على Android | Fix Google sign-in on Android
 
 ### أُصلح

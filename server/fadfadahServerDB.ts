@@ -39,6 +39,7 @@ export type PaymentTransactionType =
   | 'QUOTA_UNLOCK';
 export type PaymentStatus = 'COMPLETED' | 'FAILED' | 'REFUNDED';
 export type ManualTopupStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+export type ManualPaymentRequestType = 'TOPUP' | 'SUBSCRIPTION';
 
 export interface ServerManualTopupPackage {
   id: string;
@@ -61,6 +62,8 @@ export interface ServerManualPaymentMethod {
 
 export interface ServerManualTopupRequest {
   id: string;
+  request_type?: ManualPaymentRequestType;
+  premium_plan?: Exclude<PremiumPlan, 'free'>;
   user_id: string;
   user_nickname: string;
   package_id: string;
@@ -99,6 +102,7 @@ export interface ServerUserRecord {
   embedding_vector: number[];
   is_premium: boolean;
   premium_plan: PremiumPlan;
+  premium_expires_at?: number;
   points: number;
   unlocked_frames: number[];
   blocked_user_ids: string[];
@@ -126,6 +130,8 @@ export interface PublicUserDTO {
   country: string;
   embedding_vector: number[];
   is_premium: boolean;
+  premium_plan: PremiumPlan;
+  premium_expires_at?: number;
   role: UserRole;
   status: AccountStatus;
   is_online: boolean;
@@ -510,13 +516,27 @@ export class FadfadahServerDB {
     const userId = this.tokenIndex.get(hash);
     if (!userId) return null;
     const user = this.users.get(userId) ?? null;
+    if (user) this.isPremiumActive(user);
     if (user && user.status === 'suspended' && user.suspension_until && user.suspension_until <= Date.now()) {
       // Auto-lift expired suspension
       user.status = 'active';
       user.suspension_until = undefined;
       this.scheduleSave();
     }
+
     return user;
+  }
+
+  isPremiumActive(user: ServerUserRecord): boolean {
+    if (!user.is_premium) return false;
+    if (user.premium_expires_at === undefined || user.premium_expires_at > Date.now()) {
+      return true;
+    }
+    user.is_premium = false;
+    user.premium_plan = 'free';
+    user.premium_expires_at = undefined;
+    this.scheduleSave();
+    return false;
   }
 
   reserveUniqueSlug(desired: string, currentUserId?: string): string {
@@ -703,7 +723,9 @@ export class FadfadahServerDB {
       languages: u.languages,
       country: u.country,
       embedding_vector: u.embedding_vector,
-      is_premium: u.is_premium,
+      is_premium: this.isPremiumActive(u),
+      premium_plan: u.premium_plan,
+      premium_expires_at: u.premium_expires_at,
       role: u.role,
       status: u.status,
       is_online: isOnline,

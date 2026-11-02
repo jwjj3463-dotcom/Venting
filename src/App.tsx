@@ -76,7 +76,9 @@ export default function App() {
   const [tick, setTick] = useState(0);
   const [walletNotice, setWalletNotice] = useState<{
     status: 'APPROVED' | 'REJECTED';
+    requestType: 'TOPUP' | 'SUBSCRIPTION';
     points: number;
+    premiumPlan?: 'weekly' | 'monthly' | 'quarterly';
     reason: string;
   } | null>(null);
 
@@ -653,11 +655,15 @@ export default function App() {
             <span className="flex-1">
               {walletNotice.status === 'APPROVED'
                 ? lang === 'ar'
-                  ? `تم قبول طلب الشحن وإضافة ${walletNotice.points} نقطة إلى محفظتك.`
-                  : `Top-up approved: ${walletNotice.points} points were added to your wallet.`
+                  ? walletNotice.requestType === 'SUBSCRIPTION'
+                    ? `تم تفعيل اشتراك VIP وإضافة ${walletNotice.points} نقطة ترحيبية إلى محفظتك.`
+                    : `تم قبول طلب الشحن وإضافة ${walletNotice.points} نقطة إلى محفظتك.`
+                  : walletNotice.requestType === 'SUBSCRIPTION'
+                    ? `VIP subscription approved; ${walletNotice.points} bonus points were added.`
+                    : `Top-up approved: ${walletNotice.points} points were added to your wallet.`
                 : lang === 'ar'
-                  ? `تم رفض طلب الشحن.${walletNotice.reason ? ` السبب: ${walletNotice.reason}` : ''}`
-                  : `Top-up rejected.${walletNotice.reason ? ` Reason: ${walletNotice.reason}` : ''}`}
+                  ? `${walletNotice.requestType === 'SUBSCRIPTION' ? 'تم رفض طلب اشتراك VIP.' : 'تم رفض طلب الشحن.'}${walletNotice.reason ? ` السبب: ${walletNotice.reason}` : ''}`
+                  : `${walletNotice.requestType === 'SUBSCRIPTION' ? 'VIP subscription request rejected.' : 'Top-up request rejected.'}${walletNotice.reason ? ` Reason: ${walletNotice.reason}` : ''}`}
             </span>
             <button type="button" onClick={() => setWalletNotice(null)} aria-label="Dismiss">
               ×

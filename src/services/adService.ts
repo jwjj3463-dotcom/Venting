@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { realmDB, RealmUser } from '../db/realmLocalDB';
+import { isRealmPremiumActive, realmDB, RealmUser } from '../db/realmLocalDB';
 import { fadfadahClient } from './fadfadahNetworkClient';
 import { Capacitor } from '@capacitor/core';
 import { showAdMobInterstitial } from './nativeAdMob';
@@ -101,7 +101,7 @@ class AdService {
   shouldShowAds(user?: RealmUser | null): boolean {
     if (!this.config.enabled) return false;
     if (!user) return true;
-    if (user.is_premium || (user.premium_plan && user.premium_plan !== 'free')) {
+    if (isRealmPremiumActive(user)) {
       return false;
     }
     return true;

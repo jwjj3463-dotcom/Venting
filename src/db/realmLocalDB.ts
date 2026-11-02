@@ -50,6 +50,7 @@ export interface RealmUser {
   embedding_vector: number[];
   is_premium: boolean;
   premium_plan: PremiumPlan;
+  premium_expires_at?: number;
   points: number;
   unlocked_frames: number[];
   blocked_user_ids: string[];
@@ -65,6 +66,12 @@ export interface RealmUser {
   suspension_until?: number;
   banned_at?: number;
   ban_reason?: string;
+}
+
+export function isRealmPremiumActive(
+  user: Pick<RealmUser, 'is_premium' | 'premium_expires_at'>
+): boolean {
+  return user.is_premium && (user.premium_expires_at === undefined || user.premium_expires_at > Date.now());
 }
 
 export interface RealmPersonalLink {
@@ -196,6 +203,7 @@ export const FADFADAH_REALM_SCHEMAS: RealmObjectSchema[] = [
       embedding_vector: 'float[]',
       is_premium: 'bool',
       premium_plan: 'string',
+      premium_expires_at: 'date?',
       points: 'int',
       unlocked_frames: 'int[]',
       blocked_user_ids: 'string[]',
@@ -351,7 +359,7 @@ export class LocalRealmDB {
   };
   private listeners: Set<() => void> = new Set();
   private initialized = false;
-  public readonly schemaVersion = 390;
+  public readonly schemaVersion = 391;
 
   async open(): Promise<this> {
     if (this.initialized) return this;

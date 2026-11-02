@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
+import { Sparkles } from 'lucide-react';
 import {
   androidApkUpdaterEvents,
   AndroidAppUpdate,
@@ -94,27 +95,30 @@ export const AndroidAppUpdatePrompt: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-5">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#080613]/75 p-5 backdrop-blur-sm">
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="android-update-title"
-        className="w-full max-w-md space-y-4 rounded-3xl border border-white/10 bg-[#1E1B2E] p-6 text-white shadow-2xl"
+        className="border-beam relative w-full max-w-md space-y-5 rounded-3xl border border-white/10 bg-gradient-to-br from-[#292044] via-[#1E1B2E] to-[#171326] p-6 text-white shadow-2xl shadow-purple-950/50"
       >
-        <div className="space-y-1 text-center">
-          <p className="text-xs font-semibold text-purple-200">فضفضة · إصدار {update.version}</p>
-          <h2 id="android-update-title" className="text-xl font-bold">
+        <div className="space-y-3 text-center">
+          <div className="mx-auto flex w-fit items-center gap-2 rounded-full border border-purple-200/20 bg-purple-300/10 px-3 py-1.5">
+            <Sparkles className="h-4 w-4 text-amber-300" aria-hidden="true" />
+            <p className="text-xs font-semibold text-purple-100">فضفضة · إصدار {update.version}</p>
+          </div>
+          <h2 id="android-update-title" className="text-2xl font-bold tracking-tight">
             يتوفر تحديث جديد
           </h2>
-          <p className="text-sm leading-relaxed text-purple-100">
+          <p className="text-sm leading-relaxed text-purple-100/85">
             يحتوي هذا الإصدار على تحسينات وميزات جديدة. سيتم تنزيله ثم فتح نافذة Android الرسمية لتأكيد التثبيت.
           </p>
         </div>
 
         {update.notes && (
-          <div className="max-h-44 overflow-y-auto rounded-2xl bg-black/25 p-4">
-            <h3 className="mb-2 text-sm font-bold">ما الجديد؟</h3>
-            <p className="whitespace-pre-wrap text-xs leading-relaxed text-purple-100">
+          <div className="max-h-44 overflow-y-auto rounded-2xl border border-white/10 bg-black/20 p-4">
+            <h3 className="mb-2 text-sm font-bold text-amber-200">ما الجديد؟</h3>
+            <p className="whitespace-pre-wrap text-xs leading-relaxed text-purple-100/90">
               {update.notes}
             </p>
           </div>
@@ -124,7 +128,7 @@ export const AndroidAppUpdatePrompt: React.FC = () => {
           <div className="space-y-2" role="status" aria-live="polite">
             <div className="h-2 overflow-hidden rounded-full bg-white/10">
               <div
-                className="h-full rounded-full bg-[#8B5CF6] transition-[width]"
+                className="h-full rounded-full bg-gradient-to-r from-[#8B5CF6] to-amber-300 transition-[width]"
                 style={{ width: `${progress ?? 35}%` }}
               />
             </div>
@@ -141,7 +145,7 @@ export const AndroidAppUpdatePrompt: React.FC = () => {
             type="button"
             disabled={downloading}
             onClick={dismiss}
-            className="min-h-12 rounded-xl bg-white/10 text-sm font-semibold disabled:opacity-50"
+            className="min-h-12 rounded-xl border border-white/10 bg-white/5 text-sm font-semibold transition-colors hover:bg-white/10 disabled:opacity-50"
           >
             لاحقًا
           </button>
@@ -149,7 +153,7 @@ export const AndroidAppUpdatePrompt: React.FC = () => {
             type="button"
             disabled={downloading}
             onClick={() => void startUpdate()}
-            className="min-h-12 rounded-xl bg-[#8B5CF6] text-sm font-bold disabled:opacity-50"
+            className="min-h-12 rounded-xl bg-gradient-to-r from-[#8B5CF6] to-[#6D4BE8] text-sm font-bold shadow-lg shadow-purple-950/30 transition-transform active:scale-[0.98] disabled:opacity-50"
           >
             {downloading ? 'جارٍ التنزيل...' : 'تحديث الآن'}
           </button>

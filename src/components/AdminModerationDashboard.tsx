@@ -39,6 +39,7 @@ import {
   RealmPaymentTransaction,
   RealmReportModeration,
   RealmUser,
+  isRealmPremiumActive,
 } from '../db/realmLocalDB';
 import { FramedAvatar, OfficialBadge } from './FramedAvatar';
 import { AppLang, TRANSLATIONS } from '../i18n/translations';
@@ -338,7 +339,7 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
           { id: 'audit_logs' as AdminTab, label: t.auditLogsTab, icon: History },
           { id: 'users' as AdminTab, label: t.usersTab, icon: Users },
           { id: 'ledger' as AdminTab, label: t.paymentsLedgerTab, icon: CreditCard },
-          { id: 'manual_topups' as AdminTab, label: lang === 'ar' ? 'الشحن اليدوي' : 'Manual top-ups', icon: Coins },
+          { id: 'manual_topups' as AdminTab, label: lang === 'ar' ? 'طلبات الدفع اليدوي' : 'Manual payments', icon: Coins },
           { id: 'ads' as AdminTab, label: lang === 'ar' ? 'الإعلانات وAdMob' : 'Ads & AdMob', icon: Megaphone },
         ].map((tab) => {
           const Icon = tab.icon;
@@ -773,7 +774,7 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-400 font-mono-num mt-0.5">
-                          {u.country} · {u.points} {lang === 'ar' ? 'نقطة' : 'pts'} · {u.is_premium ? 'VIP' : 'Free'}
+                          {u.country} · {u.points} {lang === 'ar' ? 'نقطة' : 'pts'} · {isRealmPremiumActive(u) ? 'VIP' : 'Free'}
                         </p>
                       </div>
                     </div>
@@ -888,7 +889,7 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
             <section className="space-y-3">
               <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                  {lang === 'ar' ? 'طلبات الشحن الواردة' : 'Incoming top-up requests'}
+                  {lang === 'ar' ? 'طلبات الشحن واشتراكات VIP' : 'Incoming top-up and VIP requests'}
                 </h3>
                 <p className="mt-1 text-[11px] text-slate-500">
                   {lang === 'ar'
@@ -910,10 +911,17 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="font-bold text-sm text-slate-900 dark:text-white">
-                            {request.user_nickname} · {lang === 'ar' ? request.package_title_ar : request.package_title_en}
+                            {request.user_nickname} ·{' '}
+                            {request.request_type === 'SUBSCRIPTION'
+                              ? lang === 'ar' ? 'اشتراك VIP' : 'VIP subscription'
+                              : lang === 'ar' ? 'شحن نقاط' : 'Points top-up'}
+                            {' · '}{lang === 'ar' ? request.package_title_ar : request.package_title_en}
                           </p>
                           <p className="mt-1 text-xs text-slate-500 font-mono-num">
-                            {request.amount} {request.currency} · {request.points} {lang === 'ar' ? 'نقطة' : 'points'}
+                            {request.amount} {request.currency} · {request.points}{' '}
+                            {request.request_type === 'SUBSCRIPTION'
+                              ? lang === 'ar' ? 'نقطة ترحيبية' : 'bonus points'
+                              : lang === 'ar' ? 'نقطة' : 'points'}
                           </p>
                         </div>
                         <span
@@ -966,7 +974,9 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
                               className="min-h-[42px] px-4 rounded-xl bg-emerald-600 disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5"
                             >
                               <CheckCircle2 className="w-4 h-4" />
-                              {lang === 'ar' ? 'قبول وإضافة النقاط' : 'Approve & credit points'}
+                              {request.request_type === 'SUBSCRIPTION'
+                                ? lang === 'ar' ? 'قبول وتفعيل VIP' : 'Approve & activate VIP'
+                                : lang === 'ar' ? 'قبول وإضافة النقاط' : 'Approve & credit points'}
                             </button>
                             <input
                               value={manualTopupRejectionReasons[request.id] || ''}
