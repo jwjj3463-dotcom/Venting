@@ -6,6 +6,10 @@
     <a href="https://github.com/jwjj3463-dotcom/Venting/releases">التنزيلات والإصدارات</a>
     ·
     <a href="https://github.com/jwjj3463-dotcom/Venting/actions">حالة البناء</a>
+    ·
+    <a href="https://github.com/jwjj3463-dotcom/Venting/blob/main/privacy-policy.md">سياسة الخصوصية</a>
+    ·
+    <a href="https://github.com/jwjj3463-dotcom/Venting/blob/main/terms-of-service.md">شروط الاستخدام</a>
   </p>
 </div>
 
