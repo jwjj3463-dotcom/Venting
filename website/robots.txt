@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://jwjj3463-dotcom.github.io/Venting/sitemap.xml

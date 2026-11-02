@@ -3,6 +3,8 @@
   <h1>فضفضة | Fadfada</h1>
   <p>منصة عربية للتعبير والتواصل واكتشاف أشخاص جدد.</p>
   <p>
+    <a href="https://jwjj3463-dotcom.github.io/Venting/">الموقع الرسمي</a>
+    ·
     <a href="https://github.com/jwjj3463-dotcom/Venting/releases">التنزيلات والإصدارات</a>
     ·
     <a href="https://github.com/jwjj3463-dotcom/Venting/actions">حالة البناء</a>
