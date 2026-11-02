@@ -50,6 +50,7 @@ class FadfadahNetworkClient {
   private onlineCount = 1;
   private queueSize = 0;
   private matchCandidates: LiveMatchCandidate[] = [];
+  private matchQueuePreferences: { countryFilter: string; langFilter: string } | null = null;
   private typingUsersByRoom = new Map<string, boolean>();
   private stateListeners = new Set<() => void>();
   private manualClose = false;
@@ -552,6 +553,12 @@ class FadfadahNetworkClient {
         }
         this.connectionState = 'connected';
         this.emitState();
+        if (this.matchQueuePreferences) {
+          this.joinMatchmakingQueue(
+            this.matchQueuePreferences.countryFilter,
+            this.matchQueuePreferences.langFilter
+          );
+        }
       };
 
       socket.onmessage = async (event) => {
@@ -839,6 +846,7 @@ class FadfadahNetworkClient {
   // ============================================================================
 
   joinMatchmakingQueue(countryFilter: string, langFilter: string): void {
+    this.matchQueuePreferences = { countryFilter, langFilter };
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(
         JSON.stringify({
@@ -851,6 +859,7 @@ class FadfadahNetworkClient {
   }
 
   leaveMatchmakingQueue(): void {
+    this.matchQueuePreferences = null;
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'match:leave_queue' }));
     }

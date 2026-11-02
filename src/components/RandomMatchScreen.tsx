@@ -1,5 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { MessageCircle, RefreshCw, SkipForward, SlidersHorizontal, Crown, Gift, Play } from 'lucide-react';
+import {
+  MessageCircle,
+  RefreshCw,
+  SkipForward,
+  SlidersHorizontal,
+  Crown,
+  Gift,
+  Radar,
+  Users,
+  Sparkles,
+} from 'lucide-react';
 import { FramedAvatar, OfficialBadge } from './FramedAvatar';
 import { RealmUser } from '../db/realmLocalDB';
 import { fadfadahClient, LiveMatchCandidate } from '../services/fadfadahNetworkClient';
@@ -20,6 +30,19 @@ interface RandomMatchScreenProps {
 
 const FREE_DAILY_LIMIT = 5;
 
+function getRadarPosition(userId: string): { left: string; top: string } {
+  let seed = 0;
+  for (const character of userId) {
+    seed = (seed * 31 + character.charCodeAt(0)) >>> 0;
+  }
+  const angle = (seed % 360) * (Math.PI / 180);
+  const radius = 18 + (seed % 24);
+  return {
+    left: `${50 + Math.cos(angle) * radius}%`,
+    top: `${50 + Math.sin(angle) * radius}%`,
+  };
+}
+
 export const RandomMatchScreen: React.FC<RandomMatchScreenProps> = ({
   selfUser,
   lang,
@@ -33,6 +56,9 @@ export const RandomMatchScreen: React.FC<RandomMatchScreenProps> = ({
     fadfadahClient.getMatchCandidates()
   );
   const [stats, setStats] = useState(() => fadfadahClient.getOnlineStats());
+  const [connectionState, setConnectionState] = useState(() =>
+    fadfadahClient.getConnectionState()
+  );
   const [candidateIndex, setCandidateIndex] = useState<number>(0);
   const [requesting, setRequesting] = useState<boolean>(false);
   const [feedbackBanner, setFeedbackBanner] = useState<string>('');
@@ -45,6 +71,7 @@ export const RandomMatchScreen: React.FC<RandomMatchScreenProps> = ({
     const unsub = fadfadahClient.subscribe(() => {
       setCandidates(fadfadahClient.getMatchCandidates());
       setStats(fadfadahClient.getOnlineStats());
+      setConnectionState(fadfadahClient.getConnectionState());
     });
 
     fadfadahClient.joinMatchmakingQueue(countryFilter, langFilter);
@@ -57,6 +84,7 @@ export const RandomMatchScreen: React.FC<RandomMatchScreenProps> = ({
 
   const currentMatch =
     candidates.length > 0 ? candidates[candidateIndex % candidates.length] : null;
+  const onlineCandidates = candidates.filter((candidate) => candidate.peer.is_online);
 
   const handleSkip = () => {
     setFeedbackBanner('');
@@ -114,14 +142,132 @@ export const RandomMatchScreen: React.FC<RandomMatchScreenProps> = ({
 
   return (
     <div className="p-4 sm:p-5 space-y-5 max-w-2xl mx-auto">
-      {/* Live Criteria Filter Bar */}
-      <div className="rounded-2xl bg-white dark:bg-[#1E1B2E] border border-slate-200 dark:border-white/10 p-4 space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-200">
-            <SlidersHorizontal className="w-4 h-4 text-[#8B5CF6]" />
-            <span>{lang === 'ar' ? 'رادار المطابقة الحقيقي المباشر' : 'Live Match Radar'}</span>
+      <section className="relative isolate overflow-hidden rounded-[2rem] border border-violet-200/80 bg-gradient-to-br from-white via-violet-50 to-indigo-100 p-5 shadow-xl shadow-violet-950/5 dark:border-white/10 dark:from-[#211a37] dark:via-[#17142a] dark:to-[#111323] sm:p-6">
+        <div className="pointer-events-none absolute -right-20 -top-24 -z-10 h-64 w-64 rounded-full bg-violet-400/20 blur-3xl dark:bg-violet-500/15" />
+        <div className="pointer-events-none absolute -bottom-28 -left-20 -z-10 h-56 w-56 rounded-full bg-indigo-400/20 blur-3xl dark:bg-indigo-500/10" />
+
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-600 text-white shadow-lg shadow-violet-900/20">
+              <Radar className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-sm font-extrabold text-slate-900 dark:text-white sm:text-base">
+                {lang === 'ar' ? 'رادار المطابقة المباشر' : 'Live match radar'}
+              </h2>
+              <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                {lang === 'ar'
+                  ? 'اكتشف المستخدمين المتصلين الآن'
+                  : 'Discover people online right now'}
+              </p>
+            </div>
           </div>
-          <span className="text-xs text-slate-500 dark:text-slate-400 font-mono-num">
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/70 bg-white/70 px-2.5 py-1 text-[10px] font-bold text-slate-600 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                connectionState === 'connected'
+                  ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]'
+                  : connectionState === 'connecting'
+                    ? 'animate-pulse bg-amber-400'
+                    : 'bg-rose-500'
+              }`}
+            />
+            {connectionState === 'connected'
+              ? t.radarLive
+              : connectionState === 'connecting'
+                ? t.radarConnecting
+                : t.radarOffline}
+          </span>
+        </div>
+
+        <div className="mb-5 grid grid-cols-2 gap-3">
+          <div className="flex items-center gap-2.5 rounded-2xl border border-white/80 bg-white/70 p-3 backdrop-blur dark:border-white/10 dark:bg-black/15">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300">
+              <Users className="h-4 w-4" />
+            </span>
+            <span className="min-w-0">
+              <strong className="block text-base font-extrabold leading-tight text-slate-900 dark:text-white">
+                {onlineCandidates.length}
+              </strong>
+              <span className="block truncate text-[10px] text-slate-500 dark:text-slate-400">
+                {t.radarOnlineMatches}
+              </span>
+            </span>
+          </div>
+          <div className="flex items-center gap-2.5 rounded-2xl border border-white/80 bg-white/70 p-3 backdrop-blur dark:border-white/10 dark:bg-black/15">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-400/10 dark:text-violet-300">
+              <Sparkles className="h-4 w-4" />
+            </span>
+            <span className="min-w-0">
+              <strong className="block text-base font-extrabold leading-tight text-slate-900 dark:text-white">
+                {stats.queueSize}
+              </strong>
+              <span className="block truncate text-[10px] text-slate-500 dark:text-slate-400">
+                {t.radarQueueUsers}
+              </span>
+            </span>
+          </div>
+        </div>
+
+        <div className="relative mx-auto mb-4 aspect-square w-full max-w-[19rem] overflow-hidden rounded-full border border-violet-300/50 bg-[radial-gradient(circle_at_50%_42%,#322259_0%,#1b1630_58%,#121020_100%)] shadow-[inset_0_0_40px_rgba(139,92,246,0.16),0_18px_45px_rgba(45,27,105,0.18)] dark:border-violet-300/20">
+          <div className="radar-pulse-ring absolute inset-[8%] rounded-full border border-violet-300/35" />
+          <div className="radar-pulse-ring absolute inset-[8%] rounded-full border border-violet-300/25 [animation-delay:1.6s]" />
+          <div className="radar-grid absolute inset-[8%] rounded-full border border-violet-300/20" />
+          <div
+            className="radar-sweep absolute inset-[8%] rounded-full"
+            style={{
+              background:
+                'conic-gradient(from 0deg, rgba(167,139,250,0.38) 0deg, rgba(139,92,246,0.12) 36deg, rgba(139,92,246,0) 78deg, transparent 360deg)',
+            }}
+          />
+
+          {onlineCandidates.slice(0, 8).map((candidate) => (
+            <button
+              key={candidate.peer.id}
+              type="button"
+              onClick={() => setCandidateIndex(candidates.indexOf(candidate))}
+              aria-label={
+                lang === 'ar'
+                  ? `عرض المستخدم المتصل ${candidate.peer.nickname}`
+                  : `View online user ${candidate.peer.nickname}`
+              }
+              title={candidate.peer.nickname}
+              className="radar-blip absolute z-10 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-violet-300/15 transition-transform hover:scale-125 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300"
+              style={getRadarPosition(candidate.peer.id)}
+            >
+              <span className="absolute h-5 w-5 rounded-full bg-violet-400/25" />
+              <span
+                className={`relative h-2.5 w-2.5 rounded-full border border-white shadow-[0_0_12px_rgba(167,139,250,0.95)] ${
+                  candidate.inQueue ? 'bg-emerald-300' : 'bg-violet-200'
+                }`}
+              />
+            </button>
+          ))}
+
+          <div className="absolute left-1/2 top-1/2 z-20 flex h-[4.5rem] w-[4.5rem] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border border-violet-200/30 bg-[#17132b]/90 text-violet-100 shadow-[0_0_28px_rgba(139,92,246,0.28)] backdrop-blur">
+            <Radar className="h-6 w-6" />
+            <span className="mt-0.5 text-[8px] font-bold tracking-[0.18em]">LIVE</span>
+          </div>
+
+          <div className="absolute inset-x-0 bottom-[9%] z-20 flex justify-center px-4">
+            <span className="rounded-full border border-white/10 bg-[#120f20]/70 px-3 py-1 text-[10px] font-medium text-violet-100/85 backdrop-blur">
+              {onlineCandidates.length > 0
+                ? t.scanningPeers
+                : t.radarNoOnlineUsers}
+            </span>
+          </div>
+        </div>
+
+        <div className="mb-5 flex items-center justify-between gap-3 text-[10px] text-slate-500 dark:text-slate-400">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-violet-300" />
+            {lang === 'ar' ? 'متصل' : 'Online'}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-emerald-300" />
+            {lang === 'ar' ? 'يبحث عن مطابقة' : 'Looking for a match'}
+          </span>
+          <span className="font-mono-num">
             {t.dailyQuotaLabel}:{' '}
             {selfUser.is_premium ? t.unlimited : `${usedToday}/${FREE_DAILY_LIMIT}`}
           </span>
@@ -135,7 +281,7 @@ export const RandomMatchScreen: React.FC<RandomMatchScreenProps> = ({
               setCandidateIndex(0);
             }}
             aria-label={t.filterCountry}
-            className="h-11 px-3 rounded-xl bg-slate-50 dark:bg-[#151221] border border-slate-200 dark:border-white/10 text-xs font-medium text-slate-800 dark:text-slate-100"
+            className="h-11 rounded-xl border border-white/80 bg-white/75 px-3 text-xs font-semibold text-slate-800 shadow-sm backdrop-blur outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 dark:border-white/10 dark:bg-[#151221]/80 dark:text-slate-100"
           >
             <option value="ALL">{t.allCountries}</option>
             {AVAILABLE_COUNTRIES.map((c) => (
@@ -152,7 +298,7 @@ export const RandomMatchScreen: React.FC<RandomMatchScreenProps> = ({
               setCandidateIndex(0);
             }}
             aria-label={t.filterLanguage}
-            className="h-11 px-3 rounded-xl bg-slate-50 dark:bg-[#151221] border border-slate-200 dark:border-white/10 text-xs font-medium text-slate-800 dark:text-slate-100"
+            className="h-11 rounded-xl border border-white/80 bg-white/75 px-3 text-xs font-semibold text-slate-800 shadow-sm backdrop-blur outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 dark:border-white/10 dark:bg-[#151221]/80 dark:text-slate-100"
           >
             <option value="ALL">{t.allLanguages}</option>
             {AVAILABLE_LANGUAGES.map((l) => (
@@ -163,33 +309,7 @@ export const RandomMatchScreen: React.FC<RandomMatchScreenProps> = ({
           </select>
         </div>
 
-        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono-num">
-          {lang === 'ar'
-            ? `المتصلون بالسيرفر الآن: ${stats.onlineCount} · يبحثون في الرادار: ${stats.queueSize}`
-            : `Online now: ${stats.onlineCount} · In live queue: ${stats.queueSize}`}
-        </p>
-      </div>
-
-      {/* Radar Animation */}
-      <div className="flex flex-col items-center justify-center py-1">
-        <div className="relative w-40 h-40 flex items-center justify-center">
-          <div className="absolute inset-0 rounded-full bg-[#8B5CF6]/15 animate-radar-ring-1" />
-          <div className="absolute inset-3 rounded-full bg-[#8B5CF6]/20 animate-radar-ring-2" />
-          <div className="relative w-32 h-32 rounded-full bg-[#EDE9FE] dark:bg-[#251E3E] border border-[#8B5CF6]/30 flex items-center justify-center overflow-hidden">
-            <div
-              className="absolute inset-0 animate-radar-sweep"
-              style={{
-                background:
-                  'conic-gradient(from 0deg, rgba(139,92,246,0.36) 0deg, rgba(139,92,246,0) 75deg, rgba(139,92,246,0) 360deg)',
-              }}
-            />
-            <div className="w-16 h-16 rounded-full border border-[#8B5CF6]/40 flex items-center justify-center">
-              <div className="w-3.5 h-3.5 rounded-full bg-[#2D1B69] dark:bg-[#8B5CF6]" />
-            </div>
-          </div>
-        </div>
-        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{t.scanningPeers}</p>
-      </div>
+      </section>
 
       {feedbackBanner && (
         <div className="rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 p-3.5 text-xs font-semibold text-emerald-800 dark:text-emerald-200 text-center">

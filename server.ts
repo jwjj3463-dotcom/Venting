@@ -299,6 +299,17 @@ async function startServer() {
     });
   }
 
+  function refreshLiveCandidatesForQueuedUsers(): void {
+    for (const [userId, criteria] of matchQueue.entries()) {
+      const viewer = serverDB.users.get(userId);
+      if (!viewer || !isUserOnline(userId)) {
+        matchQueue.delete(userId);
+        continue;
+      }
+      pushLiveCandidatesToUser(viewer, criteria.countryFilter, criteria.langFilter);
+    }
+  }
+
   // WebSocket Server mounted on /ws
   const wss = new WebSocketServer({ noServer: true });
 
@@ -332,6 +343,7 @@ async function startServer() {
     }
     activeSockets.get(user.id)!.add(ws);
     broadcastOnlinePresence();
+    refreshLiveCandidatesForQueuedUsers();
 
     ws.on('message', (rawBuf: any) => {
       try {
@@ -367,17 +379,11 @@ async function startServer() {
             langFilter: lf,
             joinedAt: Date.now(),
           });
-          pushLiveCandidatesToUser(freshUser, cf, lf);
-          for (const [queuedUid, qCriteria] of matchQueue.entries()) {
-            if (queuedUid !== freshUser.id) {
-              const qUser = serverDB.users.get(queuedUid);
-              if (qUser) {
-                pushLiveCandidatesToUser(qUser, qCriteria.countryFilter, qCriteria.langFilter);
-              }
-            }
-          }
+          refreshLiveCandidatesForQueuedUsers();
         } else if (msg.type === 'match:leave_queue') {
-          matchQueue.delete(freshUser.id);
+          if (matchQueue.delete(freshUser.id)) {
+            refreshLiveCandidatesForQueuedUsers();
+          }
         }
       } catch {
         // Ignore
@@ -399,6 +405,7 @@ async function startServer() {
         serverDB.scheduleSave();
       }
       broadcastOnlinePresence();
+      refreshLiveCandidatesForQueuedUsers();
     });
   });
 
@@ -443,7 +450,7 @@ async function startServer() {
     res.json({
       ok: true,
       package: 'com.fadfadahnative',
-      version: '3.9.0',
+      version: '3.10.0',
       onlineUsers: activeSockets.size,
       totalRegisteredUsers: serverDB.users.size,
     });

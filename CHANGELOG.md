@@ -4,6 +4,13 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.10.0 — رادار مطابقة مباشر | Live match radar
+
+### أُضيف
+
+- تحديث الرادار والمرشحين مباشرة عند اتصال المستخدمين أو مغادرتهم، مع إعادة الانضمام إلى الطابور تلقائيًا بعد استعادة الاتصال.
+- تحسين مظهر الرادار وإظهار نقاط المستخدمين المتصلين الفعليين مع احترام إعداد تقليل الحركة.
+
 ## 3.9.9 — إصلاح تثبيت التحديث | Update installation fix
 
 ### أُصلح

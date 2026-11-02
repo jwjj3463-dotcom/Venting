@@ -1,1 +1,56 @@
 @import "tailwindcss";
+
+@keyframes radar-sweep {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes radar-pulse-ring {
+  0% {
+    opacity: 0.55;
+    transform: scale(0.82);
+  }
+  75%,
+  100% {
+    opacity: 0;
+    transform: scale(1.18);
+  }
+}
+
+@keyframes radar-blip {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.radar-sweep {
+  animation: radar-sweep 5s linear infinite;
+}
+
+.radar-pulse-ring {
+  animation: radar-pulse-ring 3.2s ease-out infinite;
+}
+
+.radar-blip {
+  animation: radar-blip 1.8s ease-in-out infinite;
+}
+
+.radar-grid {
+  background-image:
+    radial-gradient(circle, transparent 0 24%, rgb(139 92 246 / 22%) 24.3% 24.8%, transparent 25.1% 49%, rgb(139 92 246 / 22%) 49.3% 49.8%, transparent 50.1% 74%, rgb(139 92 246 / 22%) 74.3% 74.8%, transparent 75.1%),
+    linear-gradient(90deg, transparent calc(50% - 0.5px), rgb(139 92 246 / 14%) 50%, transparent calc(50% + 0.5px)),
+    linear-gradient(0deg, transparent calc(50% - 0.5px), rgb(139 92 246 / 14%) 50%, transparent calc(50% + 0.5px));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .radar-sweep,
+  .radar-pulse-ring,
+  .radar-blip {
+    animation: none;
+  }
+}
