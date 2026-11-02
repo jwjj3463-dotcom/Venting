@@ -1087,7 +1087,7 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
       {/* Discreet Version & Protected Admin Trigger */}
       <div className="pt-2 pb-6 text-center space-y-1">
         <p className="text-[11px] text-slate-400 dark:text-slate-500 font-mono-num">
-          فضفضة · الإصدار 3.10.0 (مستقر)
+          فضفضة · الإصدار 3.10.1 (مستقر)
         </p>
         {!isStaff && (
           <button

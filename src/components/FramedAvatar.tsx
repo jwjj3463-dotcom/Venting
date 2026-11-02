@@ -134,10 +134,11 @@ interface FramedAvatarProps {
   avatarUrl: string;
   frameId: number;
   nickname: string;
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  size?: 'radar' | 'sm' | 'md' | 'lg' | 'xl';
 }
 
 const SIZE_MAP = {
+  radar: 'w-8 h-8',
   sm: 'w-10 h-10',
   md: 'w-12 h-12',
   lg: 'w-16 h-16',

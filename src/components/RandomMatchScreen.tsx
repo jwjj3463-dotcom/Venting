@@ -232,13 +232,18 @@ export const RandomMatchScreen: React.FC<RandomMatchScreenProps> = ({
                   : `View online user ${candidate.peer.nickname}`
               }
               title={candidate.peer.nickname}
-              className="radar-blip absolute z-10 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-violet-300/15 transition-transform hover:scale-125 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300"
+              className="radar-blip absolute z-10 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/60 bg-violet-300/20 p-1 shadow-[0_0_16px_rgba(167,139,250,0.65)] transition-transform hover:scale-125 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300"
               style={getRadarPosition(candidate.peer.id)}
             >
-              <span className="absolute h-5 w-5 rounded-full bg-violet-400/25" />
+              <FramedAvatar
+                avatarUrl={candidate.peer.avatar_url}
+                frameId={candidate.peer.frame_id}
+                nickname={candidate.peer.nickname}
+                size="radar"
+              />
               <span
-                className={`relative h-2.5 w-2.5 rounded-full border border-white shadow-[0_0_12px_rgba(167,139,250,0.95)] ${
-                  candidate.inQueue ? 'bg-emerald-300' : 'bg-violet-200'
+                className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-[#211936] shadow-sm ${
+                  candidate.inQueue ? 'bg-emerald-300' : 'bg-violet-300'
                 }`}
               />
             </button>

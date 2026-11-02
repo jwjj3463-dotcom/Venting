@@ -4,6 +4,12 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.10.1 — صور المستخدمين على الرادار | Radar user avatars
+
+### أُضيف
+
+- عرض صور المستخدمين المتصلين مباشرة على الرادار بدل النقاط البيضاء، مع الإبقاء على مؤشر حالة المطابقة والضغط لفتح بطاقة المستخدم.
+
 ## 3.10.0 — رادار مطابقة مباشر | Live match radar
 
 ### أُضيف
