@@ -4,6 +4,13 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.9.5 — إصلاح التحقق من البريد | Email verification fix
+
+### أُصلح
+
+- يعتمد التحقق النهائي من البريد على حالة Firebase، لا على حداثة مطالبة `email_verified` في رمز الدخول.
+- يعيد الخادم التحقق من حالة الحساب لدى Firebase عند غياب المطالبة أو تأخر تحديثها، ولا ينشئ الجلسة إلا إذا أكد Firebase أن البريد موثق.
+
 ## 3.9.4 — إصلاحات تسجيل الدخول | Sign-in fixes
 
 ### أُصلح
