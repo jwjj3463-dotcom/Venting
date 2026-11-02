@@ -4,6 +4,18 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.10.4 — إصلاح تسجيل Google على Android | Fix Google sign-in on Android
+
+### أُصلح
+
+- تضمين اعتمادات Google الأصلية لإضافة Firebase Authentication في بناء Android، مع منع الرجوع الصامت إلى مسار الويب إذا لم تكن الإضافة الأصلية متاحة.
+- لم تتغير وظائف تسجيل الدخول والتسجيل والتحقق من البريد واستعادة كلمة المرور.
+
+### Fixed
+
+- Include the Firebase Authentication plugin's native Google dependencies in Android builds and fail clearly rather than silently using the web fallback when the native plugin is unavailable.
+- Email/password sign-in, registration, verification, and password recovery behavior is unchanged.
+
 ## 3.10.3 — إعلانات المحادثات والروابط المباشرة | Sponsored chat card and app links
 
 ### أُضيف
