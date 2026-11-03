@@ -18,9 +18,11 @@ interface AndroidApkUpdaterPlugin {
 
 export interface AndroidAppUpdate {
   tag: string;
+  currentVersion: string;
   version: string;
   notes: string;
   apkUrl: string;
+  apkSizeBytes: number;
 }
 
 const ANDROID_APK_UPDATER = registerPlugin<AndroidApkUpdaterPlugin>('AndroidApkUpdater');
@@ -78,10 +80,14 @@ export async function checkForAndroidAppUpdate(): Promise<AndroidAppUpdate | nul
       'name' in asset &&
       asset.name === 'app-release.apk' &&
       'browser_download_url' in asset &&
-      typeof asset.browser_download_url === 'string'
-  ) as { browser_download_url: string } | undefined;
+      typeof asset.browser_download_url === 'string' &&
+      'size' in asset &&
+      typeof asset.size === 'number' &&
+      Number.isSafeInteger(asset.size) &&
+      asset.size > 0
+  ) as { browser_download_url: string; size: number } | undefined;
   if (!apk || !apk.browser_download_url.startsWith('https://github.com/')) {
-    throw new Error('ملف APK الموقّع غير متوفر في إصدار GitHub.');
+    throw new Error('تعذّر تحميل معلومات ملف التحديث من GitHub.');
   }
 
   const dismissedTag = window.localStorage.getItem(DISMISSED_RELEASE_KEY);
@@ -89,12 +95,14 @@ export async function checkForAndroidAppUpdate(): Promise<AndroidAppUpdate | nul
 
   return {
     tag: release.tag_name,
+    currentVersion: installed.version,
     version,
     notes:
       'body' in release && typeof release.body === 'string'
         ? formatReleaseNotes(release.body)
         : '',
     apkUrl: apk.browser_download_url,
+    apkSizeBytes: apk.size,
   };
 }
 

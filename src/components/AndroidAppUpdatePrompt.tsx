@@ -11,6 +11,22 @@ import {
   openAndroidInstallPermissionSettings,
 } from '../services/androidAppUpdater';
 
+function formatUpdateSize(bytes: number): string {
+  const megabytes = bytes / 1_000_000;
+  return `${megabytes.toLocaleString('ar-EG', { maximumFractionDigits: 1 })} ميجابايت`;
+}
+
+function getUpdateErrorMessage(error: unknown): string {
+  const details = error instanceof Error ? error.message : '';
+  if (/INSTALL_PERMISSION_REQUIRED|السماح لفضفضة بتثبيت|السماح بتثبيت/i.test(details)) {
+    return 'لإكمال التحديث، فعّل السماح بتثبيت التطبيقات من هذا المصدر في إعدادات أندرويد، ثم ارجع واضغط «تنزيل التحديث».';
+  }
+  if (/ملف التحديث لا يخص|ليس أحدث من الإصدار|التحقق من النسخة|رابط APK غير موثوق/i.test(details)) {
+    return 'تعذّر التحقق من ملف التحديث. أعد المحاولة لاحقًا، وإذا استمرت المشكلة فتواصل مع الدعم.';
+  }
+  return 'تعذّر تنزيل التحديث. تحقّق من اتصال الإنترنت، ثم اضغط «تنزيل التحديث» للمحاولة مجددًا.';
+}
+
 export const AndroidAppUpdatePrompt: React.FC = () => {
   const [update, setUpdate] = useState<AndroidAppUpdate | null>(null);
   const [checking, setChecking] = useState(true);
@@ -44,7 +60,7 @@ export const AndroidAppUpdatePrompt: React.FC = () => {
       .addListener('downloadFailed', ({ message: errorMessage }) => {
         if (!active) return;
         setDownloading(false);
-        setMessage(errorMessage || 'تعذر تنزيل التحديث. حاول مرة أخرى.');
+        setMessage(getUpdateErrorMessage(new Error(errorMessage)));
       })
       .then((listener) => {
         if (active) removeFailure = listener.remove;
@@ -77,15 +93,16 @@ export const AndroidAppUpdatePrompt: React.FC = () => {
     try {
       if (!(await canInstallAndroidPackages())) {
         await openAndroidInstallPermissionSettings();
-        setMessage('اسمح لفضفضة بتثبيت التطبيقات من هذا المصدر، ثم ارجع واضغط تحديث الآن.');
+        setMessage('لإكمال التحديث، فعّل السماح بتثبيت التطبيقات من هذا المصدر في إعدادات أندرويد، ثم ارجع واضغط «تنزيل التحديث».');
         return;
       }
       setDownloading(true);
       setProgress(0);
       await downloadAndInstallAndroidUpdate(update.apkUrl);
     } catch (error) {
+      console.error('Could not start Android app update:', error);
       setDownloading(false);
-      setMessage(error instanceof Error ? error.message : 'تعذر بدء تنزيل التحديث.');
+      setMessage(getUpdateErrorMessage(error));
     }
   };
 
@@ -105,13 +122,14 @@ export const AndroidAppUpdatePrompt: React.FC = () => {
         <div className="space-y-3 text-center">
           <div className="mx-auto flex w-fit items-center gap-2 rounded-full border border-purple-200/20 bg-purple-300/10 px-3 py-1.5">
             <Sparkles className="h-4 w-4 text-amber-300" aria-hidden="true" />
-            <p className="text-xs font-semibold text-purple-100">فضفضة · إصدار {update.version}</p>
+            <p className="text-xs font-semibold text-purple-100">فضفضة · الإصدار الجديد {update.version}</p>
           </div>
           <h2 id="android-update-title" className="text-2xl font-bold tracking-tight">
-            يتوفر تحديث جديد
+            تحديث جديد لتجربة أفضل
           </h2>
           <p className="text-sm leading-relaxed text-purple-100/85">
-            يحتوي هذا الإصدار على تحسينات وميزات جديدة. سيتم تنزيله ثم فتح نافذة Android الرسمية لتأكيد التثبيت.
+            الإصدار الحالي: {update.currentVersion} · الإصدار الجديد: {update.version} · حجم ملف التحديث: {formatUpdateSize(update.apkSizeBytes)}.
+            {' '}عند اختيار «تنزيل التحديث»، سيبدأ تنزيل الملف، ثم ستظهر نافذة التثبيت الرسمية في نظام أندرويد لإكمال التثبيت.
           </p>
         </div>
 
@@ -133,7 +151,7 @@ export const AndroidAppUpdatePrompt: React.FC = () => {
               />
             </div>
             <p className="text-center text-xs text-purple-200">
-              {progress === null ? 'جارٍ تنزيل التحديث...' : `جارٍ التنزيل: ${progress}%`}
+              {progress === null ? 'جارٍ تنزيل ملف التحديث...' : `نسبة اكتمال التنزيل: ${progress}٪`}
             </p>
           </div>
         )}
@@ -155,7 +173,7 @@ export const AndroidAppUpdatePrompt: React.FC = () => {
             onClick={() => void startUpdate()}
             className="min-h-12 rounded-xl bg-gradient-to-r from-[#8B5CF6] to-[#6D4BE8] text-sm font-bold shadow-lg shadow-purple-950/30 transition-transform active:scale-[0.98] disabled:opacity-50"
           >
-            {downloading ? 'جارٍ التنزيل...' : 'تحديث الآن'}
+            {downloading ? 'جارٍ تنزيل التحديث...' : 'تنزيل التحديث'}
           </button>
         </div>
       </section>

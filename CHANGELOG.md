@@ -4,6 +4,20 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.11.7 — تحسين نافذة تحديث التطبيق | App update prompt copy improvements
+
+### تحسينات
+
+- توضيح الإصدار الحالي والجديد وحجم ملف التحديث بدقة.
+- شرح تنزيل التحديث وظهور نافذة أندرويد الرسمية لإكمال التثبيت.
+- عرض مزايا الإصدار ورسائل التحديث باللغة العربية بصياغة أوضح.
+
+### Improved
+
+- Show the current and new versions and the exact update file size.
+- Explain the download and Android's official installation confirmation.
+- Present release notes and update messages in clearer Arabic.
+
 ## 3.11.6 — إصلاح الدفع وتحسين الشخصيات الذكية | Payment and AI character fixes
 
 ### أُصلح
