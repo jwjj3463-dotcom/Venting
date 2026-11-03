@@ -241,17 +241,9 @@ export interface ServerPaymentTransaction {
 export interface ServerAdSettings {
   enabled: boolean;
   banner_enabled: boolean;
-  chat_card_enabled: boolean;
   interstitial_enabled: boolean;
   rewarded_enabled: boolean;
   test_mode: boolean;
-  ad_provider: 'adsense' | 'monetag' | 'custom' | 'admob';
-  adsense_publisher_id: string; // e.g. ca-pub-XXXXXXXXXXXXXXXX
-  adsense_banner_slot_id: string; // e.g. 1234567890
-  monetag_zone_id: string; // e.g. zone ID or link
-  chat_sponsor_url: string;
-  custom_banner_code: string; // HTML / iframe snippet from any ad network
-  rewarded_sponsor_url: string; // Direct link or sponsored offer for rewarded ad
   admob_app_id: string;
   admob_banner_id: string;
   admob_interstitial_id: string;
@@ -263,17 +255,9 @@ export interface ServerAdSettings {
 export const DEFAULT_AD_SETTINGS: ServerAdSettings = {
   enabled: true,
   banner_enabled: true,
-  chat_card_enabled: true,
   interstitial_enabled: true,
   rewarded_enabled: false,
   test_mode: true,
-  ad_provider: 'admob',
-  adsense_publisher_id: '',
-  adsense_banner_slot_id: '',
-  monetag_zone_id: '',
-  chat_sponsor_url: 'https://uplcm.com/4/12175682',
-  custom_banner_code: '',
-  rewarded_sponsor_url: 'https://adsense.google.com',
   admob_app_id: 'ca-app-pub-3940256099942544~3347511713',
   admob_banner_id: 'ca-app-pub-3940256099942544/6300978111',
   admob_interstitial_id: 'ca-app-pub-3940256099942544/1033173712',
@@ -286,7 +270,6 @@ interface PersistedDatabaseShape {
   schemaVersion: number;
   owner_bootstrap_completed?: boolean;
   owner_recovery_completed?: boolean;
-  chat_card_setting_migrated?: boolean;
   users: ServerUserRecord[];
   personal_links: ServerPersonalLink[];
   chat_rooms: ServerChatRoom[];
@@ -369,7 +352,6 @@ export class FadfadahServerDB {
   public adSettings: ServerAdSettings = { ...DEFAULT_AD_SETTINGS };
   public ownerBootstrapCompleted = false;
   public ownerRecoveryCompleted = false;
-  private chatCardSettingMigrated = false;
 
   private flushPromise: Promise<void> = Promise.resolve();
   private flushScheduled = false;
@@ -434,14 +416,8 @@ export class FadfadahServerDB {
           parsed.owner_bootstrap_completed === true ||
           Array.from(this.users.values()).some((user) => user.role === 'owner');
         this.ownerRecoveryCompleted = parsed.owner_recovery_completed === true;
-        this.chatCardSettingMigrated = parsed.chat_card_setting_migrated === true;
         if (parsed.ad_settings) {
           this.adSettings = { ...DEFAULT_AD_SETTINGS, ...parsed.ad_settings };
-        }
-        if (!this.chatCardSettingMigrated) {
-          this.adSettings.chat_card_enabled = true;
-          this.chatCardSettingMigrated = true;
-          this.scheduleSave();
         }
       } catch (err) {
         console.error('Failed to read existing fadfadah.db.json, starting fresh:', err);
@@ -450,7 +426,6 @@ export class FadfadahServerDB {
         await this.flushNow();
       }
     } else {
-      this.chatCardSettingMigrated = true;
       await this.flushNow();
     }
   }
@@ -482,7 +457,6 @@ export class FadfadahServerDB {
       manual_payment_methods: this.manualPaymentMethods,
       owner_bootstrap_completed: this.ownerBootstrapCompleted,
       owner_recovery_completed: this.ownerRecoveryCompleted,
-      chat_card_setting_migrated: this.chatCardSettingMigrated,
       ad_settings: this.adSettings,
     };
     const tmpFile = `${DB_FILE}.tmp`;

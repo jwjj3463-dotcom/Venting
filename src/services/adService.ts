@@ -11,17 +11,9 @@ import { showAdMobInterstitial } from './nativeAdMob';
 export interface AdConfig {
   enabled: boolean;
   banner_enabled: boolean;
-  chat_card_enabled: boolean;
   interstitial_enabled: boolean;
   rewarded_enabled: boolean;
   test_mode: boolean;
-  ad_provider: 'adsense' | 'monetag' | 'custom' | 'admob';
-  adsense_publisher_id: string;
-  adsense_banner_slot_id: string;
-  monetag_zone_id: string;
-  chat_sponsor_url: string;
-  custom_banner_code: string;
-  rewarded_sponsor_url: string;
   admob_app_id: string;
   admob_banner_id: string;
   admob_interstitial_id: string;
@@ -33,17 +25,9 @@ export interface AdConfig {
 export const DEFAULT_AD_CONFIG: AdConfig = {
   enabled: true,
   banner_enabled: true,
-  chat_card_enabled: true,
   interstitial_enabled: true,
   rewarded_enabled: false,
   test_mode: true,
-  ad_provider: 'admob',
-  adsense_publisher_id: '',
-  adsense_banner_slot_id: '',
-  monetag_zone_id: '',
-  chat_sponsor_url: 'https://uplcm.com/4/12175682',
-  custom_banner_code: '',
-  rewarded_sponsor_url: 'https://adsense.google.com',
   admob_app_id: 'ca-app-pub-3940256099942544~3347511713',
   admob_banner_id: 'ca-app-pub-3940256099942544/6300978111',
   admob_interstitial_id: 'ca-app-pub-3940256099942544/1033173712',
@@ -81,14 +65,32 @@ class AdService {
       const serverUrl = fadfadahClient.getServerBaseUrl();
       const res = await fetch(`${serverUrl}/api/ads/config`);
       if (res.ok) {
-        const data = await res.json();
-        this.config = { ...this.config, ...data };
+        const data = (await res.json()) as Partial<AdConfig>;
+        this.config = this.mergeConfig(data);
         this.notify();
       }
     } catch {
       // Use cached/default config
     }
     return this.config;
+  }
+
+  private mergeConfig(data: Partial<AdConfig>): AdConfig {
+    return {
+      enabled: data.enabled ?? this.config.enabled,
+      banner_enabled: data.banner_enabled ?? this.config.banner_enabled,
+      interstitial_enabled: data.interstitial_enabled ?? this.config.interstitial_enabled,
+      rewarded_enabled: data.rewarded_enabled ?? this.config.rewarded_enabled,
+      test_mode: data.test_mode ?? this.config.test_mode,
+      admob_app_id: data.admob_app_id ?? this.config.admob_app_id,
+      admob_banner_id: data.admob_banner_id ?? this.config.admob_banner_id,
+      admob_interstitial_id:
+        data.admob_interstitial_id ?? this.config.admob_interstitial_id,
+      admob_rewarded_id: data.admob_rewarded_id ?? this.config.admob_rewarded_id,
+      reward_points_amount: data.reward_points_amount ?? this.config.reward_points_amount,
+      interstitial_cooldown_seconds:
+        data.interstitial_cooldown_seconds ?? this.config.interstitial_cooldown_seconds,
+    };
   }
 
   getConfig(): AdConfig {
@@ -111,22 +113,13 @@ class AdService {
     return this.shouldShowAds(user) && this.config.banner_enabled;
   }
 
-  shouldShowChatCard(user?: RealmUser | null): boolean {
-    if (!this.shouldShowAds(user) || !this.config.chat_card_enabled) return false;
-    try {
-      return new URL(this.config.chat_sponsor_url).protocol === 'https:';
-    } catch {
-      return false;
-    }
-  }
-
   shouldShowRewarded(user?: RealmUser | null): boolean {
     return false;
   }
 
   canShowInterstitial(user?: RealmUser | null): boolean {
     if (!this.shouldShowAds(user)) return false;
-    if (!Capacitor.isNativePlatform() || this.config.ad_provider !== 'admob') return false;
+    if (!Capacitor.isNativePlatform()) return false;
     if (!this.config.interstitial_enabled) return false;
     const now = Date.now();
     const cooldownMs = (this.config.interstitial_cooldown_seconds || 90) * 1000;
@@ -141,7 +134,6 @@ class AdService {
     if (
       !this.config.enabled ||
       !this.config.interstitial_enabled ||
-      this.config.ad_provider !== 'admob' ||
       !this.config.admob_interstitial_id?.trim()
     ) {
       return;
@@ -208,8 +200,8 @@ class AdService {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error('FORBIDDEN');
-    const data = await res.json();
-    this.config = { ...this.config, ...data.config };
+    const data = (await res.json()) as { config: Partial<AdConfig> };
+    this.config = this.mergeConfig(data.config);
     this.notify();
     return this.config;
   }
@@ -230,8 +222,8 @@ class AdService {
         const errData = await res.json();
         return { ok: false, error: errData.error || 'Update failed' };
       }
-      const data = await res.json();
-      this.config = { ...this.config, ...data.config };
+      const data = (await res.json()) as { config: Partial<AdConfig> };
+      this.config = this.mergeConfig(data.config);
       this.notify();
       return { ok: true };
     } catch (err) {

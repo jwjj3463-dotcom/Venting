@@ -20,8 +20,6 @@ import {
   Gift,
   Sparkles,
   DollarSign,
-  Globe,
-  ExternalLink,
   Layers,
   Image as ImageIcon,
   Plus,
@@ -1367,8 +1365,8 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   {lang === 'ar'
-                    ? 'اربط تطبيقك بشبكات إعلانية رسمية ومجانية (Google AdSense أو Monetag أو AdMob) لتحقيق أرباح حقيقية من الزوار.'
-                    : 'Connect your app to official free ad networks (Google AdSense, Monetag, or AdMob) to generate real revenue.'}
+                    ? 'إعلانات تطبيق Android تعمل عبر Google AdMob فقط. استخدم وحدات الاختبار أثناء التجربة، ثم أضف معرّفاتك الحقيقية قبل تفعيل الإعلانات الحية.'
+                    : 'Android app ads use Google AdMob only. Use test units during development and configure your real AdMob IDs before enabling live ads.'}
                 </p>
               </div>
 
@@ -1417,184 +1415,11 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
               </div>
             </div>
 
-            {/* Step-by-Step Educational Guide for Real Revenue */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 rounded-3xl bg-blue-950/30 border border-blue-500/25 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-blue-300 flex items-center gap-1.5">
-                    <Globe className="w-4 h-4 text-blue-400" />
-                    1. Google AdSense (شبكة جوجل الرسمية)
-                  </span>
-                  <a
-                    href="https://adsense.google.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[10px] text-blue-400 hover:underline flex items-center gap-0.5"
-                  >
-                    <span>التسجيل مجاناً</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-                <p className="text-[11px] text-slate-300 leading-relaxed">
-                  الشبكة الأكثر موثوقية في العالم للمواقع وتطبيقات الويب وPWA. التسجيل مجاني 100%، وترسل لك جوجل أرباحك شهرياً عبر التحويل البنكي. انسخ معرّف الناشر <code className="text-amber-300 bg-black/40 px-1 rounded font-mono">ca-pub-XXXXXXXXXXXX</code> وضعه بالأسفل.
-                </p>
-              </div>
-
-              <div className="p-4 rounded-3xl bg-emerald-950/30 border border-emerald-500/25 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
-                    <DollarSign className="w-4 h-4 text-emerald-400" />
-                    2. Monetag أو Adsterra (قبول فوري ومجاني)
-                  </span>
-                  <a
-                    href="https://monetag.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[10px] text-emerald-400 hover:underline flex items-center gap-0.5"
-                  >
-                    <span>فتح حساب فوري</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-                <p className="text-[11px] text-slate-300 leading-relaxed">
-                  أفضل خيار للمواقع والتطبيقات الجديدة، القبول فوري 100% بدون مراجعة دومين، يعطيك شفرة إعلان مباشرة تنسخها وتلصقها هنا لتبدأ الإعلانات الحقيقية بالظهور على الفور، والدفع عبر PayPal أو البنك أو USDT.
-                </p>
-              </div>
-            </div>
-
             {/* Ads Configuration Form */}
             <form
               onSubmit={handleSaveAdsConfig}
               className="rounded-3xl bg-white dark:bg-[#1E1B2E] border border-slate-200 dark:border-white/10 p-5 sm:p-6 space-y-5"
             >
-              {/* Ad Provider Choice */}
-              <div>
-                <label className="block text-xs font-bold text-slate-900 dark:text-white mb-2">
-                  {lang === 'ar' ? 'اختر شبكة الإعلانات الأساسية للتطبيق:' : 'Select Primary Ad Network:'}
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {[
-                    { id: 'adsense', label: 'Google AdSense (جوجل)' },
-                    { id: 'monetag', label: 'Monetag (قبول فوري)' },
-                    { id: 'custom', label: 'كود إعلاني مخصص' },
-                    { id: 'admob', label: 'Google AdMob (أندرويد)' },
-                  ].map((prov) => {
-                    const isSelected = (adConfig.ad_provider || 'adsense') === prov.id;
-                    return (
-                      <button
-                        key={prov.id}
-                        type="button"
-                        onClick={() => setAdConfig({ ...adConfig, ad_provider: prov.id as any })}
-                        className={`p-3 rounded-2xl text-xs font-bold border transition-all text-center ${
-                          isSelected
-                            ? 'bg-[#8B5CF6]/15 border-[#8B5CF6] text-[#8B5CF6]'
-                            : 'bg-slate-50 dark:bg-[#151221] border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-slate-300'
-                        }`}
-                      >
-                        {prov.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Network Specific Settings */}
-              {adConfig.ad_provider === 'adsense' && (
-                <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/40 space-y-3">
-                  <div className="space-y-1">
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Google AdSense Publisher ID (معرّف الناشر الرسمي في جوجل)
-                    </label>
-                    <input
-                      type="text"
-                      value={adConfig.adsense_publisher_id || ''}
-                      onChange={(e) => setAdConfig({ ...adConfig, adsense_publisher_id: e.target.value })}
-                      placeholder="ca-pub-1234567890123456"
-                      dir="ltr"
-                      className="w-full h-11 px-3.5 rounded-xl bg-white dark:bg-[#151221] border border-slate-200 dark:border-white/10 text-xs font-mono-num text-slate-900 dark:text-white"
-                    />
-                    <p className="text-[10px] text-slate-500">
-                      ستجده في لوحة تحكم AdSense تحت الحساب {'>'} الإعدادات {'>'} معلومات الحساب.
-                    </p>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      AdSense Banner Slot ID (معرّف الوحدة الإعلانية - اختياري)
-                    </label>
-                    <input
-                      type="text"
-                      value={adConfig.adsense_banner_slot_id || ''}
-                      onChange={(e) => setAdConfig({ ...adConfig, adsense_banner_slot_id: e.target.value })}
-                      placeholder="9876543210"
-                      dir="ltr"
-                      className="w-full h-11 px-3.5 rounded-xl bg-white dark:bg-[#151221] border border-slate-200 dark:border-white/10 text-xs font-mono-num text-slate-900 dark:text-white"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {(adConfig.ad_provider === 'monetag' || adConfig.ad_provider === 'custom') && (
-                <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 space-y-3">
-                  <div className="space-y-1">
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      كود أو شفرة الإعلان المباشرة (HTML / Script / Iframe Ad Tag)
-                    </label>
-                    <textarea
-                      rows={4}
-                      value={adConfig.custom_banner_code || ''}
-                      onChange={(e) => setAdConfig({ ...adConfig, custom_banner_code: e.target.value })}
-                      placeholder={`<script type="text/javascript"> ... </script> أو كود البانر من Monetag / Adsterra`}
-                      dir="ltr"
-                      className="w-full p-3 rounded-xl bg-white dark:bg-[#151221] border border-slate-200 dark:border-white/10 text-xs font-mono text-slate-900 dark:text-white"
-                    />
-                    <p className="text-[10px] text-slate-500">
-                      انسخ كود البانر من شبكتك الإعلانية والصقه هنا، وسيتم تضمينه وتشغيله بأمان داخل مساحات البانر.
-                    </p>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      رابط العرض المباشر أو SmartLink لإعلانات المكافأة
-                    </label>
-                    <input
-                      type="url"
-                      value={adConfig.rewarded_sponsor_url || ''}
-                      onChange={(e) => setAdConfig({ ...adConfig, rewarded_sponsor_url: e.target.value })}
-                      placeholder="https://..."
-                      dir="ltr"
-                      className="w-full h-11 px-3.5 rounded-xl bg-white dark:bg-[#151221] border border-slate-200 dark:border-white/10 text-xs font-mono text-slate-900 dark:text-white"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <section className="rounded-2xl bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900/40 p-4 space-y-3">
-                <div>
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                    {lang === 'ar' ? 'بطاقة Monetag بين المحادثات' : 'Monetag Sponsored Chat Card'}
-                  </h4>
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    {lang === 'ar'
-                      ? 'تظهر بطاقة واحدة موسومة كإعلان بين المحادثات المقبولة. الضغط يفتح SmartLink في المتصفح، ولا يمنح نقاطًا.'
-                      : 'Shows one clearly labeled sponsored card between accepted chats. Clicking opens the SmartLink; it does not award points.'}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    {lang === 'ar' ? 'رابط Monetag SmartLink' : 'Monetag SmartLink URL'}
-                  </label>
-                  <input
-                    type="url"
-                    value={adConfig.chat_sponsor_url || ''}
-                    onChange={(e) => setAdConfig({ ...adConfig, chat_sponsor_url: e.target.value })}
-                    placeholder="https://uplcm.com/4/..."
-                    dir="ltr"
-                    className="w-full h-11 px-3.5 rounded-xl bg-white dark:bg-[#151221] border border-slate-200 dark:border-white/10 text-xs font-mono text-slate-900 dark:text-white"
-                  />
-                </div>
-              </section>
-
               {/* Toggles */}
               <h4 className="text-sm font-bold text-slate-900 dark:text-white pb-2 border-b border-slate-100 dark:border-white/10">
                 {lang === 'ar' ? 'مفاتيح التفعيل والتعطيل' : 'Feature Toggles'}
@@ -1614,23 +1439,6 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
                     type="checkbox"
                     checked={adConfig.enabled}
                     onChange={(e) => setAdConfig({ ...adConfig, enabled: e.target.checked })}
-                    className="w-5 h-5 accent-[#8B5CF6] rounded"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 dark:bg-[#151221] border border-slate-200 dark:border-white/10 cursor-pointer">
-                  <div className="space-y-0.5">
-                    <span className="text-xs font-bold text-slate-900 dark:text-white block">
-                      {lang === 'ar' ? 'بطاقة إعلان بين المحادثات' : 'Sponsored Chat Card'}
-                    </span>
-                    <span className="text-[11px] text-slate-500">
-                      {lang === 'ar' ? 'تظهر للمستخدمين غير المشتركين فقط عند وجود محادثات' : 'Shown to non-premium users when chats are available'}
-                    </span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={adConfig.chat_card_enabled}
-                    onChange={(e) => setAdConfig({ ...adConfig, chat_card_enabled: e.target.checked })}
                     className="w-5 h-5 accent-[#8B5CF6] rounded"
                   />
                 </label>
@@ -1676,8 +1484,8 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
                     </span>
                     <span className="text-[11px] text-slate-500">
                       {lang === 'ar'
-                        ? 'رابط Monetag لا يثبت إكمال الإعلان؛ لا تُمنح نقاط قبل توفر تحقق موثوق من السيرفر'
-                        : 'Monetag SmartLinks cannot verify completion; rewards stay disabled until server-side verification is available'}
+                        ? 'إعلانات المكافآت متوقفة حتى إعداد التحقق الآمن من AdMob على الخادم.'
+                        : 'Rewarded ads remain disabled until secure server-side AdMob verification is configured.'}
                     </span>
                   </div>
                   <input

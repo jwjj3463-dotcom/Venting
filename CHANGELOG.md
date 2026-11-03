@@ -4,6 +4,20 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.12.0 — AdMob فقط وإزالة Monetag | AdMob-only ads
+
+### أُصلح
+
+- إزالة إعلانات Monetag والروابط الدعائية من التطبيق.
+- قصر إعلانات Android على وحدات Google AdMob الأصلية، مع عدم حقن أكواد شبكات خارجية داخل الصفحة.
+- إزالة علامة التحقق التي أُضيفت خطأً إلى موقع الويب.
+
+### Fixed
+
+- Remove Monetag ads and sponsored links from the app.
+- Restrict Android ads to native Google AdMob units and stop injecting third-party ad code into the page.
+- Remove the verification tag mistakenly added to the website.
+
 ## 3.11.9 — تمييز المالك وإضافة العملات | Owner account and coin grants
 
 ### أُضيف
@@ -178,7 +192,6 @@ User-facing changes are recorded here. A GitHub Release is published automatical
 
 ### أُضيف
 
-- بطاقة إعلان Monetag واضحة بين المحادثات المقبولة، مع مفتاح تشغيل مستقل في لوحة الإدارة وتوافقها مع مفتاح إيقاف الإعلانات العام.
 - فتح روابط `/u/:slug` داخل تطبيق Android عند تثبيت الإصدار الجديد والتحقق من ارتباط النطاق.
 
 ### أُصلح

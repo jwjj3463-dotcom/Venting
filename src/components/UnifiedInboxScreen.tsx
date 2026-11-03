@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   XCircle,
   Crown,
-  Megaphone,
   Flag,
   Ban,
 } from 'lucide-react';
@@ -19,10 +18,9 @@ import {
   isRealmPremiumActive,
 } from '../db/realmLocalDB';
 import { fadfadahClient, InterestRequestDTO } from '../services/fadfadahNetworkClient';
-import { nativeCopyText, nativeShareUrl, openExternalUrl } from '../services/androidNative';
+import { nativeCopyText, nativeShareUrl } from '../services/androidNative';
 import { AppLang, TRANSLATIONS } from '../i18n/translations';
 import { AdBanner } from './AdBanner';
-import { adService, AdConfig } from '../services/adService';
 
 interface UnifiedInboxScreenProps {
   selfUser: RealmUser;
@@ -56,13 +54,6 @@ export const UnifiedInboxScreen: React.FC<UnifiedInboxScreenProps> = ({
   const [interestRequestsError, setInterestRequestsError] = useState('');
   const [pendingInterestAction, setPendingInterestAction] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [adConfig, setAdConfig] = useState<AdConfig>(() => adService.getConfig());
-  const [adOpenError, setAdOpenError] = useState(false);
-
-  useEffect(() => {
-    return adService.subscribe(() => setAdConfig(adService.getConfig()));
-  }, []);
-
   useEffect(() => {
     let active = true;
     const loadRequests = async () => {
@@ -158,16 +149,6 @@ export const UnifiedInboxScreen: React.FC<UnifiedInboxScreenProps> = ({
     });
     if (!shared) {
       await handleCopyLink();
-    }
-  };
-
-  const handleOpenSponsoredLink = async () => {
-    setAdOpenError(false);
-    try {
-      await openExternalUrl(adConfig.chat_sponsor_url);
-    } catch (error) {
-      console.error('Failed to open sponsored ad link:', error);
-      setAdOpenError(true);
     }
   };
 
@@ -712,34 +693,6 @@ export const UnifiedInboxScreen: React.FC<UnifiedInboxScreenProps> = ({
                       )}
                     </div>
                   </button>
-                  {index === 0 && activeInboxTab === 'LINK_BASED' && adService.shouldShowChatCard(selfUser) && (
-                    <div className="px-3 py-2 border-y border-[#8B5CF6]/15 bg-purple-50/60 dark:bg-[#191528]">
-                      <button
-                        type="button"
-                        onClick={handleOpenSponsoredLink}
-                        className="w-full min-h-[56px] px-3 py-2 rounded-xl border border-[#8B5CF6]/25 bg-white dark:bg-[#211c30] flex items-center gap-3 text-start active:scale-[0.99] transition-transform"
-                        aria-label={lang === 'ar' ? 'فتح إعلان برعاية Monetag' : 'Open sponsored advertisement'}
-                      >
-                        <span className="w-9 h-9 rounded-xl bg-[#8B5CF6]/10 text-[#8B5CF6] flex items-center justify-center shrink-0">
-                          <Megaphone className="w-4 h-4" />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-[9px] text-[#8B5CF6] font-semibold">
-                            {lang === 'ar' ? 'إعلان برعاية' : 'Sponsored'}
-                          </span>
-                          <span className="block text-xs font-bold text-slate-900 dark:text-white">
-                            {lang === 'ar' ? 'اكتشف عرضًا قد يهمك' : 'Discover an offer'}
-                          </span>
-                          {adOpenError && (
-                            <span className="block text-[10px] text-rose-600" role="alert">
-                              {lang === 'ar' ? 'تعذر فتح الإعلان. حاول مرة أخرى.' : 'Could not open the ad. Try again.'}
-                            </span>
-                          )}
-                        </span>
-                        <ExternalLink className="w-4 h-4 text-slate-400 shrink-0" />
-                      </button>
-                    </div>
-                  )}
                 </Fragment>
               );
             })
