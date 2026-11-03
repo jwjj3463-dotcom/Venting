@@ -1828,3 +1828,33 @@ body {
   .home-primary-button > span,
   .home-way { transition: none; }
 }
+
+.brand img {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 auto;
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  object-fit: contain;
+}
+.footer-brand img { width: 48px; height: 48px; }
+.story-mark img,
+.gallery-logo .gallery-art img,
+.download-icon img,
+.mock-appbar > img,
+.download-art-tile img {
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  height: auto;
+  object-fit: contain;
+  object-position: center;
+}
+@media (max-width: 680px) {
+  .brand img { width: 40px; height: 40px; }
+  .footer-brand img { width: 44px; height: 44px; }
+}
