@@ -8,6 +8,8 @@ import {
   XCircle,
   Crown,
   Megaphone,
+  Flag,
+  Ban,
 } from 'lucide-react';
 import { FramedAvatar, OfficialBadge } from './FramedAvatar';
 import {
@@ -16,7 +18,7 @@ import {
   RealmUser,
   isRealmPremiumActive,
 } from '../db/realmLocalDB';
-import { fadfadahClient } from '../services/fadfadahNetworkClient';
+import { fadfadahClient, InterestRequestDTO } from '../services/fadfadahNetworkClient';
 import { nativeCopyText, nativeShareUrl, openExternalUrl } from '../services/androidNative';
 import { AppLang, TRANSLATIONS } from '../i18n/translations';
 import { AdBanner } from './AdBanner';
@@ -46,13 +48,46 @@ export const UnifiedInboxScreen: React.FC<UnifiedInboxScreenProps> = ({
   onOpenUpgrade,
 }) => {
   const t = TRANSLATIONS[lang];
-  const [activeInboxTab, setActiveInboxTab] = useState<'LINK_BASED' | 'RANDOM'>('LINK_BASED');
+  const [activeInboxTab, setActiveInboxTab] = useState<'LINK_BASED' | 'RANDOM' | 'INTEREST'>(
+    'INTEREST'
+  );
+  const [interestRequests, setInterestRequests] = useState<InterestRequestDTO[]>([]);
+  const [interestRequestsLoading, setInterestRequestsLoading] = useState(true);
+  const [interestRequestsError, setInterestRequestsError] = useState('');
+  const [pendingInterestAction, setPendingInterestAction] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [adConfig, setAdConfig] = useState<AdConfig>(() => adService.getConfig());
   const [adOpenError, setAdOpenError] = useState(false);
 
   useEffect(() => {
     return adService.subscribe(() => setAdConfig(adService.getConfig()));
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadRequests = async () => {
+      try {
+        const requests = await fadfadahClient.getInterestRequests();
+        if (active) {
+          setInterestRequests(requests);
+          setInterestRequestsError('');
+        }
+      } catch (error) {
+        if (active) {
+          setInterestRequestsError(
+            error instanceof Error ? error.message : 'تعذر تحميل طلبات التعارف.'
+          );
+        }
+      } finally {
+        if (active) setInterestRequestsLoading(false);
+      }
+    };
+    void loadRequests();
+    const unsubscribe = fadfadahClient.subscribeInterestRequestUpdates(loadRequests);
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, []);
 
   const shareableUrl = `${fadfadahClient.getShareBaseUrl()}/u/${encodeURIComponent(
@@ -94,6 +129,15 @@ export const UnifiedInboxScreen: React.FC<UnifiedInboxScreenProps> = ({
   const randomUnreadTotal =
     acceptedRandomRooms.reduce((acc, r) => acc + r.unread_count, 0) +
     pendingRandomRequests.filter((r) => r.participant_b === selfUser.id).length;
+  const incomingInterestRequests = interestRequests.filter(
+    (request) => request.direction === 'INCOMING' && request.status === 'PENDING'
+  );
+  const outgoingInterestRequests = interestRequests.filter(
+    (request) => request.direction === 'OUTGOING' && request.status === 'PENDING'
+  );
+  const resolvedInterestRequests = interestRequests
+    .filter((request) => ['ACCEPTED', 'REJECTED', 'IGNORED'].includes(request.status))
+    .slice(0, 5);
 
   const handleCopyLink = async () => {
     const ok = await nativeCopyText(shareableUrl);
@@ -134,6 +178,55 @@ export const UnifiedInboxScreen: React.FC<UnifiedInboxScreenProps> = ({
 
   const handleRejectRequest = async (room: RealmChatRoom) => {
     await fadfadahClient.respondToChatRequest(room.id, 'REJECT');
+  };
+
+  const handleInterestAction = async (
+    request: InterestRequestDTO,
+    action: 'ACCEPT' | 'REJECT' | 'IGNORE' | 'BLOCK'
+  ) => {
+    setPendingInterestAction(request.id);
+    try {
+      const result = await fadfadahClient.respondToInterestRequest(request.id, action);
+      if (!result.ok) {
+        setInterestRequestsError(
+          result.error || (lang === 'ar' ? 'تعذر تحديث الطلب.' : 'Could not update request.')
+        );
+        return;
+      }
+      if (action === 'ACCEPT' && result.roomId) onSelectRoom(result.roomId);
+      const updated = await fadfadahClient.getInterestRequests();
+      setInterestRequests(updated);
+      setInterestRequestsError('');
+    } catch (error) {
+      setInterestRequestsError(
+        error instanceof Error ? error.message : 'تعذر تحديث طلب التعارف.'
+      );
+    } finally {
+      setPendingInterestAction(null);
+    }
+  };
+
+  const handleReportInterestRequest = async (request: InterestRequestDTO) => {
+    setPendingInterestAction(request.id);
+    try {
+      const result = await fadfadahClient.submitReport({
+        interestRequestId: request.id,
+        reportedUserId: request.sender_id,
+        target_type: 'user',
+        target_id: request.id,
+        reason: 'طلب تعارف غير مرغوب أو مخالف',
+      });
+      if (!result.ok) {
+        setInterestRequestsError(result.summary || 'تعذر إرسال البلاغ.');
+        return;
+      }
+      setInterestRequests(await fadfadahClient.getInterestRequests());
+      setInterestRequestsError('');
+    } catch (error) {
+      setInterestRequestsError(error instanceof Error ? error.message : 'تعذر إرسال البلاغ.');
+    } finally {
+      setPendingInterestAction(null);
+    }
   };
 
   const formatRowTime = (ts: number) => {
@@ -182,7 +275,23 @@ export const UnifiedInboxScreen: React.FC<UnifiedInboxScreenProps> = ({
     <div className="flex flex-col h-full">
       {/* Native Android Dual Tab Bar */}
       <div className="bg-white dark:bg-[#1E1B2E] border-b border-slate-200 dark:border-white/10 px-4 shrink-0">
-        <div className="grid grid-cols-2">
+        <div className="grid grid-cols-3">
+          <button
+            type="button"
+            onClick={() => setActiveInboxTab('INTEREST')}
+            className={`min-h-[46px] text-xs sm:text-sm font-bold border-b-2 transition-colors flex items-center justify-center gap-2 whitespace-nowrap ${
+              activeInboxTab === 'INTEREST'
+                ? 'border-[#8B5CF6] text-[#8B5CF6]'
+                : 'border-transparent text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            <span>{lang === 'ar' ? 'طلبات التعارف' : 'Requests'}</span>
+            {incomingInterestRequests.length > 0 && (
+              <span className="font-mono-num text-[11px] font-bold text-[#8B5CF6]">
+                ({incomingInterestRequests.length})
+              </span>
+            )}
+          </button>
           <button
             type="button"
             onClick={() => setActiveInboxTab('LINK_BASED')}
@@ -221,7 +330,205 @@ export const UnifiedInboxScreen: React.FC<UnifiedInboxScreenProps> = ({
 
       {/* Scrollable Inbox Feed */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* Dynamic Personal Link Card */}
+      {activeInboxTab === 'INTEREST' && (
+        <section className="space-y-3">
+          <div className="rounded-2xl bg-gradient-to-br from-[#2D1B69] to-[#5536a5] p-4 text-white">
+            <h3 className="text-sm font-bold">
+              {lang === 'ar' ? 'ابدأ التعارف بموافقة واضحة' : 'Meet with mutual consent'}
+            </h3>
+            <p className="mt-1 text-xs leading-relaxed text-purple-100">
+              {lang === 'ar'
+                ? 'لن تبدأ المحادثة الخاصة إلا بعد قبول طلب التعارف. يمكنك رفض الطلب أو تجاهله أو حظر صاحبه والإبلاغ عنه.'
+                : 'Private chat starts only after you accept. You can reject, ignore, block, or report a request.'}
+            </p>
+          </div>
+          {interestRequestsError && (
+            <p role="alert" className="rounded-xl bg-rose-50 p-3 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+              {interestRequestsError}
+            </p>
+          )}
+          {interestRequestsLoading ? (
+            <p className="py-8 text-center text-xs text-slate-500">
+              {lang === 'ar' ? 'جارٍ تحميل الطلبات...' : 'Loading requests...'}
+            </p>
+          ) : incomingInterestRequests.length === 0 &&
+            outgoingInterestRequests.length === 0 &&
+            resolvedInterestRequests.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 p-7 text-center text-xs text-slate-500 dark:border-white/15 dark:text-slate-400">
+              {lang === 'ar' ? 'لا توجد طلبات تعارف معلقة.' : 'No pending introduction requests.'}
+            </div>
+          ) : (
+            <>
+              {incomingInterestRequests.map((request) => {
+                const busy = pendingInterestAction === request.id;
+                return (
+                  <article
+                    key={request.id}
+                    className="rounded-2xl border border-[#8B5CF6]/30 bg-white p-4 shadow-sm dark:bg-[#1E1B2E]"
+                  >
+                    <div className="flex items-start gap-3">
+                      <FramedAvatar
+                        avatarUrl={request.sender_avatar_url}
+                        frameId={request.sender_frame_id}
+                        nickname={request.sender_nickname}
+                        size="md"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                            {request.is_anonymous
+                              ? lang === 'ar'
+                                ? 'زائر مجهول'
+                                : 'Anonymous visitor'
+                              : request.sender_nickname}
+                          </h4>
+                          {!request.is_anonymous && request.sender_age && (
+                            <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[10px] font-semibold text-purple-700 dark:bg-purple-950/50 dark:text-purple-200">
+                              {request.sender_age} {lang === 'ar' ? 'سنة' : 'years'}
+                            </span>
+                          )}
+                        </div>
+                        {!request.is_anonymous && request.sender_bio && (
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            {request.sender_bio}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {!request.is_anonymous && request.sender_interests.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {request.sender_interests.slice(0, 6).map((interest) => (
+                          <span
+                            key={interest}
+                            className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] text-slate-600 dark:bg-white/5 dark:text-slate-300"
+                          >
+                            {interest}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <p className="mt-3 rounded-xl bg-slate-50 p-3 text-sm leading-relaxed text-slate-800 dark:bg-[#151221] dark:text-slate-100">
+                      {request.intro_text}
+                    </p>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void handleInterestAction(request, 'ACCEPT')}
+                        className="min-h-[42px] rounded-xl bg-[#8B5CF6] text-xs font-bold text-white disabled:opacity-50"
+                      >
+                        <CheckCircle2 className="me-1 inline h-4 w-4" />
+                        {lang === 'ar' ? 'قبول وبدء المحادثة' : 'Accept & chat'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void handleInterestAction(request, 'REJECT')}
+                        className="min-h-[42px] rounded-xl bg-slate-100 text-xs font-semibold text-slate-700 dark:bg-white/5 dark:text-slate-200 disabled:opacity-50"
+                      >
+                        <XCircle className="me-1 inline h-4 w-4" />
+                        {lang === 'ar' ? 'رفض' : 'Reject'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void handleInterestAction(request, 'IGNORE')}
+                        className="min-h-[38px] rounded-xl border border-slate-200 text-[11px] font-semibold text-slate-600 dark:border-white/10 dark:text-slate-300 disabled:opacity-50"
+                      >
+                        {lang === 'ar' ? 'تجاهل' : 'Ignore'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void handleInterestAction(request, 'BLOCK')}
+                        className="min-h-[38px] rounded-xl border border-rose-200 text-[11px] font-semibold text-rose-600 dark:border-rose-900/50 dark:text-rose-300 disabled:opacity-50"
+                      >
+                        <Ban className="me-1 inline h-3.5 w-3.5" />
+                        {lang === 'ar' ? 'حظر' : 'Block'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void handleReportInterestRequest(request)}
+                        className="col-span-2 min-h-[36px] text-[11px] font-semibold text-slate-500 disabled:opacity-50 dark:text-slate-400"
+                      >
+                        <Flag className="me-1 inline h-3.5 w-3.5" />
+                        {lang === 'ar' ? 'إبلاغ عن الطلب' : 'Report request'}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+              {outgoingInterestRequests.map((request) => (
+                <article
+                  key={request.id}
+                  className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-[#1E1B2E]"
+                >
+                  <p className="text-xs font-bold text-slate-800 dark:text-white">
+                    {lang === 'ar' ? 'طلبك بانتظار الموافقة' : 'Your request is awaiting a response'}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{request.intro_text}</p>
+                </article>
+              ))}
+              {resolvedInterestRequests.length > 0 && (
+                <div className="space-y-2 pt-2">
+                  <h4 className="px-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                    {lang === 'ar' ? 'آخر الطلبات' : 'Recent requests'}
+                  </h4>
+                  {resolvedInterestRequests.map((request) => {
+                    const statusLabel =
+                      request.status === 'ACCEPTED'
+                        ? lang === 'ar'
+                          ? 'مقبول'
+                          : 'Accepted'
+                        : request.status === 'REJECTED'
+                          ? lang === 'ar'
+                            ? 'مرفوض'
+                            : 'Rejected'
+                          : lang === 'ar'
+                            ? 'مغلق'
+                            : 'Closed';
+                    return (
+                      <button
+                        key={request.id}
+                        type="button"
+                        disabled={!request.accepted_room_id}
+                        onClick={() => {
+                          if (request.accepted_room_id) onSelectRoom(request.accepted_room_id);
+                        }}
+                        className="flex min-h-[54px] w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 text-start dark:border-white/10 dark:bg-[#1E1B2E] disabled:cursor-default"
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-xs font-semibold text-slate-800 dark:text-slate-100">
+                            {request.is_anonymous
+                              ? lang === 'ar'
+                                ? 'زائر مجهول'
+                                : 'Anonymous visitor'
+                              : request.sender_nickname}
+                          </span>
+                          <span className="mt-0.5 block text-[10px] text-slate-500 dark:text-slate-400">
+                            {request.intro_text}
+                          </span>
+                        </span>
+                        <span
+                          className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                            request.status === 'ACCEPTED'
+                              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300'
+                              : 'bg-slate-100 text-slate-600 dark:bg-white/5 dark:text-slate-300'
+                          }`}
+                        >
+                          {statusLabel}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </section>
+      )}
+      {/* Dynamic Personal Link Card */}
         {activeInboxTab === 'LINK_BASED' && (
           <div className="rounded-2xl bg-[#2D1B69] text-white p-4 space-y-3 shadow-sm">
             <div className="flex items-center justify-between gap-2">
@@ -349,7 +656,8 @@ export const UnifiedInboxScreen: React.FC<UnifiedInboxScreenProps> = ({
         )}
 
         {/* Active Chat List */}
-        <div className="rounded-3xl bg-white dark:bg-[#1E1B2E] border border-slate-200 dark:border-white/10 divide-y divide-slate-100 dark:divide-white/10 overflow-hidden">
+        {activeInboxTab !== 'INTEREST' && (
+          <div className="rounded-3xl bg-white dark:bg-[#1E1B2E] border border-slate-200 dark:border-white/10 divide-y divide-slate-100 dark:divide-white/10 overflow-hidden">
           {(activeInboxTab === 'LINK_BASED' ? linkRooms : acceptedRandomRooms).length === 0 ? (
             <div className="p-8 text-center text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
               {activeInboxTab === 'LINK_BASED' ? t.noLinkChats : t.noRandomChats}
@@ -390,7 +698,7 @@ export const UnifiedInboxScreen: React.FC<UnifiedInboxScreenProps> = ({
                         >
                           {room.last_message_preview}
                         </p>
-                      </div>
+                        </div>
                     </div>
 
                     <div className="flex flex-col items-end gap-1.5 shrink-0">
@@ -436,7 +744,8 @@ export const UnifiedInboxScreen: React.FC<UnifiedInboxScreenProps> = ({
               );
             })
           )}
-        </div>
+          </div>
+        )}
 
         {/* Real VIP Perks Card (Honest, zero fake ad removal claims) */}
         {!isRealmPremiumActive(selfUser) && (

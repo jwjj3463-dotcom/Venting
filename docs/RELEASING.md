@@ -46,6 +46,18 @@ base64 fadfadah-upload-key.jks | tr -d '\n'
 
 أضف `ADMOB_APP_ID` إلى **Settings → Secrets and variables → Actions → Variables** بعد صدوره من AdMob. الإعلانات على الخادم متوقفة حاليًا؛ لا تفعّلها ولا تستخدم معرّفات الاختبار للإنتاج قبل إكمال مراجعة AdMob وإعداد وحدات الإعلان وسياسة الخصوصية. مكافآت النقاط تظل متوقفة حتى وجود تحقق خادمي آمن.
 
+## إعدادات الذكاء الاصطناعي والإشعارات
+
+- تُحفظ قيمة `GEMINI_API_KEY` في بيئة خدمة الخادم فقط لتفعيل ردود الشخصيات الذكية. لا تُضمّن في التطبيق أو المستودع.
+- إعداد FCM للإنتاج مكتمل في مشروع `fadfada-3c5e8`: واجهة FCM API v1 مفعّلة، واعتماد إرسال مستقل محدود بالمشروع بدور **Firebase Cloud Messaging API Admin** مربوط بخدمة API عبر `GOOGLE_APPLICATION_CREDENTIALS`.
+- يبقى ملف الاعتماد خارج المستودع والتطبيق، بصلاحيات ملف مقيدة، ولا يُرفع إلى GitHub. بعد أي تدوير للاعتماد، أعد تشغيل خدمة API بالطريقة المعتادة وتحقق أن `/api/health` يعيد `pushNotificationsEnabled: true`. إذا كانت القيمة `false` فلن تُرسل إشعارات الدفع؛ تبقى الأحداث داخل التطبيق متاحة أثناء الاتصال.
+
+## AI and push notification prerequisites
+
+- Keep `GEMINI_API_KEY` in the server service environment only to enable AI character replies. Never bundle it with the app or commit it.
+- Production FCM is configured for project `fadfada-3c5e8`: FCM API v1 is enabled, and a dedicated sender credential with the project-scoped **Firebase Cloud Messaging API Admin** role is connected to the API service through `GOOGLE_APPLICATION_CREDENTIALS`.
+- The credential file stays outside the repository and app with restricted file permissions; never upload it to GitHub. After rotating credentials, restart the API using its normal deployment procedure and verify `/api/health` reports `pushNotificationsEnabled: true`. If it is `false`, push delivery is disabled; in-app events remain available while connected.
+
 ## استرداد صلاحية المالك
 
 إذا احتجت إلى استبدال حساب المالك، انشر تحديث الخادم الذي يتضمن `/api/admin/owner-recovery` أولًا. أنشئ سرًا عشوائيًا لا يقل عن 32 بايت (`openssl rand -hex 32`) وضعه في متغير بيئة الخادم `OWNER_RECOVERY_TOKEN` فقط؛ لا تضعه في التطبيق أو المستودع. أنشئ الحساب الجديد من التطبيق واحفظ رمز استرداده، ثم أدخل سر الخادم مرة واحدة في شاشة حفظ الرمز. عند نجاح العملية، يصبح الحساب الجديد مالكًا ويُحذف حساب المالك السابق وبياناته التابعة نهائيًا. لا تُنفّذ العملية ما لم يوجد مالك سابق واحد بالضبط، وتُحفظ النتيجة على القرص قبل تأكيد النجاح. بعد النجاح، أزل `OWNER_RECOVERY_TOKEN` من بيئة الخادم؛ رمز استرداد الحساب الجديد مستقل عن هذا السر.

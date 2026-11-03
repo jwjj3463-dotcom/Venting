@@ -4,6 +4,22 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.11.0 — طلبات التعارف وSafe Chat | Introduction requests and Safe Chat
+
+### أُضيف
+
+- طلبات تعارف ببطاقات تعريفية، مع خيارات القبول والرفض والتجاهل والحظر والإبلاغ.
+- اكتشاف أشخاص وفق الاهتمامات والبلد واللغة، ومحادثات مع شخصيات ذكية واضحة الهوية.
+- وضع Safe Chat بموافقة الطرفين، ومؤقت حذف للرسائل، وتنبيه عند رصد لقطة شاشة على إصدارات Android المدعومة.
+- تسجيل أجهزة Android لإشعارات طلبات التعارف وقبولها؛ يتطلب تسليم الإشعارات الخلفية تهيئة اعتماد FCM على الخادم.
+
+### Added
+
+- Introduction requests with profile cards and accept, reject, ignore, block, and report actions.
+- Discover people by interests, country, and language, and chat with clearly labeled AI characters.
+- Mutual-consent Safe Chat with expiring messages and screenshot alerts on supported Android versions.
+- Android device registration for introduction-request and acceptance notifications; background delivery requires FCM server credentials.
+
 ## 3.10.6 — إعدادات موحدة لشحن النقاط واشتراكات VIP | Unified top-up and VIP settings
 
 ### أُضيف

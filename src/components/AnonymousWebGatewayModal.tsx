@@ -11,7 +11,6 @@ interface AnonymousWebGatewayModalProps {
   fallbackTargetUser?: RealmUser;
   onClose: () => void;
   lang: AppLang;
-  onMessageCreatedRoom: (roomId: string) => void;
 }
 
 export const AnonymousWebGatewayModal: React.FC<AnonymousWebGatewayModalProps> = ({
@@ -20,7 +19,6 @@ export const AnonymousWebGatewayModal: React.FC<AnonymousWebGatewayModalProps> =
   fallbackTargetUser,
   onClose,
   lang,
-  onMessageCreatedRoom,
 }) => {
   const t = TRANSLATIONS[lang];
   const [loadingTarget, setLoadingTarget] = useState(false);
@@ -34,6 +32,7 @@ export const AnonymousWebGatewayModal: React.FC<AnonymousWebGatewayModalProps> =
   const [secretText, setSecretText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [moderationWarning, setModerationWarning] = useState('');
+  const [requestSent, setRequestSent] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !targetSlug) return;
@@ -67,6 +66,7 @@ export const AnonymousWebGatewayModal: React.FC<AnonymousWebGatewayModalProps> =
 
     setSubmitting(true);
     setModerationWarning('');
+    setRequestSent(false);
 
     const result = await fadfadahClient.sendSecretLinkMessage(targetSlug, {
       content: cleanText,
@@ -84,10 +84,7 @@ export const AnonymousWebGatewayModal: React.FC<AnonymousWebGatewayModalProps> =
     }
 
     setSecretText('');
-    onClose();
-    if (result.roomId) {
-      onMessageCreatedRoom(result.roomId);
-    }
+    setRequestSent(true);
   };
 
   return (
@@ -129,6 +126,13 @@ export const AnonymousWebGatewayModal: React.FC<AnonymousWebGatewayModalProps> =
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4">
+            {requestSent && (
+              <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-relaxed text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-200">
+                {lang === 'ar'
+                  ? 'تم إرسال طلب التعارف. لن تبدأ المحادثة الخاصة إلا بعد موافقة صاحب الرابط.'
+                  : 'Your introduction request was sent. A private chat opens only after the recipient accepts.'}
+              </div>
+            )}
             <div className="flex items-center gap-4 pb-4 border-b border-slate-200 dark:border-white/10">
               <FramedAvatar
                 avatarUrl={targetUser.avatar_url}

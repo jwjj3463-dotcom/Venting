@@ -28,6 +28,9 @@ import { fadfadahClient } from './services/fadfadahNetworkClient';
 import {
   initNativeAndroidSystemBars,
   registerAndroidHardwareBackButton,
+  initializeFirebasePushNotifications,
+  showLocalNotification,
+  subscribeToLocalNotificationActions,
 } from './services/androidNative';
 import { UnifiedInboxScreen } from './components/UnifiedInboxScreen';
 import { ChatRoomView } from './components/ChatRoomView';
@@ -81,6 +84,18 @@ export default function App() {
     premiumPlan?: string;
     reason: string;
   } | null>(null);
+  const [interestNotice, setInterestNotice] = useState<
+    ReturnType<typeof fadfadahClient.takeInterestNotice>
+  >(null);
+
+  useEffect(
+    () =>
+      subscribeToLocalNotificationActions(() => {
+        setActiveRoomId(null);
+        setActiveTab('chats');
+      }),
+    []
+  );
 
   const [activeTab, setActiveTab] = useState<PrimaryTab>('chats');
   const [profileSubSection, setProfileSubSection] = useState<
@@ -134,6 +149,36 @@ export default function App() {
           setTick((v) => v + 1);
           const notice = fadfadahClient.takeWalletNotice();
           if (notice) setWalletNotice(notice);
+          const introNotice = fadfadahClient.takeInterestNotice();
+          if (introNotice) {
+            setInterestNotice(introNotice);
+            const language = realmDB.getSettings().language;
+            const notification =
+              introNotice.kind === 'REQUEST'
+                ? {
+                    title: language === 'ar' ? 'طلب تعارف جديد' : 'New introduction request',
+                    body:
+                      language === 'ar'
+                        ? `وصلك طلب تعارف${introNotice.nickname ? ` من ${introNotice.nickname}` : ''}.`
+                        : `You received an introduction request${introNotice.nickname ? ` from ${introNotice.nickname}` : ''}.`,
+                  }
+                : {
+                    title: language === 'ar' ? 'تحديث طلب التعارف' : 'Introduction request update',
+                    body:
+                      introNotice.kind === 'ACCEPTED'
+                        ? language === 'ar'
+                          ? 'تم قبول طلبك، ويمكنك بدء المحادثة الآن.'
+                          : 'Your request was accepted. You can chat now.'
+                        : language === 'ar'
+                          ? 'تغيرت حالة طلب التعارف.'
+                          : 'Your introduction request status changed.',
+                  };
+            void showLocalNotification(notification.title, notification.body, {
+              screen: 'interest-requests',
+            }).catch((error: unknown) => {
+              console.error('Could not present an introduction notification:', error);
+            });
+          }
           if (!realmDB.getSettings().auth_token) {
             setAccountAccessRequired(true);
           }
@@ -201,6 +246,33 @@ export default function App() {
   }, [settings.theme, settings.language, tick]);
 
   const selfUser: RealmUser | undefined = ready ? realmDB.findSelfUser() : undefined;
+
+  useEffect(() => {
+    if (!ready || !selfUser) return;
+    let cancelled = false;
+    let cleanup = () => {};
+    void (async () => {
+      if (!(await fadfadahClient.arePushNotificationsEnabled())) return;
+      const releaseListeners = await initializeFirebasePushNotifications(
+        async (token) => {
+          if (!cancelled) await fadfadahClient.registerPushToken(token);
+        },
+        () => {
+          setActiveRoomId(null);
+          setActiveTab('chats');
+        }
+      );
+      if (cancelled) releaseListeners();
+      else cleanup = releaseListeners;
+    })().catch((error: unknown) => {
+      if (!cancelled) console.error('Could not initialize FCM notifications:', error);
+    });
+    return () => {
+      cancelled = true;
+      cleanup();
+    };
+  }, [ready, selfUser?.id]);
+
   const personalLink: RealmPersonalLink | undefined = ready
     ? realmDB.findPersonalLink()
     : undefined;
@@ -670,6 +742,45 @@ export default function App() {
             </button>
           </div>
         )}
+        {interestNotice && (
+          <div
+            role="status"
+            className="mx-4 mt-3 flex items-center gap-3 rounded-2xl border border-[#8B5CF6]/25 bg-purple-50 px-4 py-3 text-xs text-purple-950 shadow-sm dark:bg-purple-950/35 dark:text-purple-100"
+          >
+            <span className="min-w-0 flex-1">
+              {interestNotice.kind === 'REQUEST'
+                ? settings.language === 'ar'
+                  ? `وصلك طلب تعارف جديد${interestNotice.nickname ? ` من ${interestNotice.nickname}` : ''}.`
+                  : `You received a new introduction request${interestNotice.nickname ? ` from ${interestNotice.nickname}` : ''}.`
+                : interestNotice.kind === 'ACCEPTED'
+                  ? settings.language === 'ar'
+                    ? 'تم قبول طلب التعارف، وأصبحت المحادثة متاحة.'
+                    : 'Your introduction request was accepted. You can now chat.'
+                  : settings.language === 'ar'
+                    ? 'تم تحديث حالة طلب التعارف.'
+                    : 'Your introduction request status was updated.'}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setInterestNotice(null);
+                setActiveRoomId(null);
+                setActiveTab('chats');
+              }}
+              className="min-h-[36px] shrink-0 rounded-lg bg-[#8B5CF6] px-3 text-[11px] font-bold text-white"
+            >
+              {settings.language === 'ar' ? 'عرض' : 'View'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setInterestNotice(null)}
+              className="min-h-[36px] shrink-0 px-1 text-slate-500"
+              aria-label={settings.language === 'ar' ? 'إغلاق الإشعار' : 'Dismiss notification'}
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         {/* Scrollable Active Tab Body */}
         <div className="flex-1 overflow-y-auto">
@@ -691,7 +802,6 @@ export default function App() {
             <RandomMatchScreen
               selfUser={selfUser}
               lang={lang}
-              onOpenChatRoom={handleOpenRoom}
               onNavigateUpgrade={handleNavigateUpgrade}
             />
           )}
@@ -702,7 +812,10 @@ export default function App() {
               allUsers={allUsers}
               vents={allVents}
               lang={lang}
-              onOpenChatRoom={handleOpenRoom}
+              onOpenProfile={() => {
+                setProfileSubSection('main');
+                setActiveTab('profile');
+              }}
             />
           )}
 
@@ -821,9 +934,6 @@ export default function App() {
           }
         }}
         lang={lang}
-        onMessageCreatedRoom={(newRoomId) => {
-          handleOpenRoom(newRoomId);
-        }}
       />
 
       {/* Google AdMob Fullscreen Interstitial Ad */}

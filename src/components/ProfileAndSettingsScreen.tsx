@@ -116,6 +116,7 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
   const [slug, setSlug] = useState(personalLink.slug);
   const [country, setCountry] = useState(selfUser.country);
   const [bio, setBio] = useState(selfUser.bio);
+  const [age, setAge] = useState(selfUser.age ? String(selfUser.age) : '');
   const [avatarUrl, setAvatarUrl] = useState(selfUser.avatar_url);
   const [frameId, setFrameId] = useState(selfUser.frame_id);
   const [interests, setInterests] = useState<string[]>(selfUser.interests);
@@ -337,6 +338,7 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
         slug: slug.trim() || personalLink.slug,
         country,
         bio: bio.trim(),
+        age: age.trim() ? Number(age) : null,
         avatar_url: requestAvatarUrl,
         frame_id: frameId,
         interests,
@@ -1349,6 +1351,27 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
           />
         </div>
 
+        <div className="space-y-1.5">
+          <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+            {lang === 'ar' ? 'العمر (18 عامًا أو أكثر)' : 'Age (18 or older)'}
+          </label>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={18}
+            max={120}
+            step={1}
+            value={age}
+            onChange={(e) => setAge(e.target.value)}
+            className="w-full h-11 px-3.5 rounded-xl bg-slate-50 dark:bg-[#151221] border border-slate-200 dark:border-white/10 text-sm text-slate-900 dark:text-white"
+          />
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            {lang === 'ar'
+              ? 'العمر الدقيق يظهر في بطاقة التعارف، ولن يُعرض للزوار المجهولين.'
+              : 'Your exact age appears on introduction cards, but is hidden from anonymous link visitors.'}
+          </p>
+        </div>
+
         <div className="space-y-3">
           <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
             {t.avatarAndFrames}
@@ -1599,7 +1622,7 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
       {/* Discreet Version & Protected Admin Trigger */}
       <div className="pt-2 pb-6 text-center space-y-1">
         <p className="text-[11px] text-slate-400 dark:text-slate-500 font-mono-num">
-          فضفضة · الإصدار 3.10.6 (مستقر)
+          فضفضة · الإصدار 3.11.0 (مستقر)
         </p>
         {!isStaff && (
           <button

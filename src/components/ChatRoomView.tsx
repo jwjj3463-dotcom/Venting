@@ -11,6 +11,8 @@ import {
   CheckCheck,
   ShieldAlert,
   X,
+  ShieldCheck,
+  Camera,
 } from 'lucide-react';
 import { FramedAvatar, OfficialBadge } from './FramedAvatar';
 import {
@@ -20,6 +22,7 @@ import {
 } from '../db/realmLocalDB';
 import { fadfadahClient } from '../services/fadfadahNetworkClient';
 import { AppLang, TRANSLATIONS } from '../i18n/translations';
+import { watchAndroidSafeChatScreenshots } from '../services/androidNative';
 
 interface ChatRoomViewProps {
   room: RealmChatRoom;
@@ -103,21 +106,86 @@ export const ChatRoomView: React.FC<ChatRoomViewProps> = ({
   const [reportReason, setReportReason] = useState('إزعاج أو سلوك غير لائق');
   const [submittingReport, setSubmittingReport] = useState(false);
   const [reportFeedback, setReportFeedback] = useState('');
+  const [safeChatDuration, setSafeChatDuration] = useState(60);
+  const [safeChatBusy, setSafeChatBusy] = useState(false);
+  const [safeChatNotice, setSafeChatNotice] = useState('');
+  const [safeChatNow, setSafeChatNow] = useState(Date.now());
+  const [captureSupported, setCaptureSupported] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const typingTimeoutRef = useRef<number | null>(null);
+  const lastScreenshotNoticeRef = useRef(0);
 
   // Subscribe to real WebSocket typing updates from the other device
   useEffect(() => {
+    lastScreenshotNoticeRef.current =
+      fadfadahClient.getSafeChatScreenshotNotice(room.id)?.createdAt ?? 0;
     const unsub = fadfadahClient.subscribe(() => {
       setPeerTyping(fadfadahClient.isPeerTypingInRoom(room.id));
+      const notice = fadfadahClient.getSafeChatScreenshotNotice(room.id);
+      if (notice && notice.createdAt > lastScreenshotNoticeRef.current) {
+        lastScreenshotNoticeRef.current = notice.createdAt;
+        setSafeChatNotice(
+          lang === 'ar'
+            ? `أبلغ ${notice.nickname || 'الطرف الآخر'} عن التقاط الشاشة أثناء وضع المحادثة الآمنة.`
+            : `${notice.nickname || 'The other participant'} reported a screenshot during Safe Chat.`
+        );
+      }
     });
     return () => {
       unsub();
       fadfadahClient.sendTypingIndicator(room.id, false);
     };
-  }, [room.id]);
+  }, [lang, room.id]);
+
+  useEffect(() => {
+    if (room.safe_chat_status !== 'ACTIVE') return;
+    const timer = window.setInterval(() => setSafeChatNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [room.safe_chat_status, room.safe_chat_expires_at]);
+
+  useEffect(() => {
+    if (room.safe_chat_status !== 'ACTIVE') {
+      setCaptureSupported(false);
+      return;
+    }
+
+    return watchAndroidSafeChatScreenshots(
+      () => {
+        void fadfadahClient.reportSafeChatScreenshot(room.id).catch((error: unknown) => {
+          console.error('Could not report a Safe Chat screenshot:', error);
+          setSafeChatNotice(
+            lang === 'ar'
+              ? 'تعذر إرسال تنبيه التقاط الشاشة للطرف الآخر.'
+              : 'Could not notify the other participant about the screenshot.'
+          );
+        });
+      },
+      setCaptureSupported
+    );
+  }, [lang, room.id, room.safe_chat_status]);
+
+  const updateSafeChat = async (
+    action: 'REQUEST' | 'ACCEPT' | 'DISABLE',
+    durationSeconds?: number
+  ) => {
+    setSafeChatBusy(true);
+    setSafeChatNotice('');
+    try {
+      const result = await fadfadahClient.updateSafeChat(room.id, action, durationSeconds);
+      if (!result.ok) {
+        setSafeChatNotice(result.error || (lang === 'ar' ? 'تعذر تحديث وضع المحادثة الآمنة.' : 'Could not update Safe Chat.'));
+      }
+    } catch (error) {
+      console.error('Could not update Safe Chat:', error);
+      setSafeChatNotice(
+        lang === 'ar' ? 'تعذر الاتصال لتحديث وضع المحادثة الآمنة.' : 'Could not connect to update Safe Chat.'
+      );
+    } finally {
+      setSafeChatBusy(false);
+    }
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -326,6 +394,116 @@ export const ChatRoomView: React.FC<ChatRoomViewProps> = ({
         </div>
       </header>
 
+      {room.status === 'ACCEPTED' && (
+        <section className="shrink-0 border-b border-violet-200/70 bg-violet-50 px-4 py-3 dark:border-violet-400/15 dark:bg-[#211b36]">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-400/15 dark:text-violet-200">
+              <ShieldCheck className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  {lang === 'ar' ? 'المحادثة الآمنة' : 'Safe Chat'}
+                </h3>
+                {room.safe_chat_status === 'ACTIVE' && (
+                  <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold tabular-nums text-emerald-800 dark:bg-emerald-400/15 dark:text-emerald-200">
+                    {lang === 'ar' ? 'متبقٍ ' : 'Remaining '}
+                    {Math.max(
+                      0,
+                      Math.ceil(((room.safe_chat_expires_at ?? 0) - safeChatNow) / 1000)
+                    )}
+                    {lang === 'ar' ? ' ث' : 's'}
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                {room.safe_chat_status === 'ACTIVE'
+                  ? lang === 'ar'
+                    ? 'سيُحذف سجل رسائل هذه المحادثة عند انتهاء المؤقت، ويُعاد ضبطه مع كل رسالة. قد لا تتوفر إشعارات التقاط الشاشة على كل الأجهزة.'
+                    : 'This room’s messages will be deleted when the timer expires and the timer resets with each message. Screenshot alerts are not available on every device.'
+                  : room.safe_chat_status === 'PENDING'
+                    ? room.safe_chat_requested_by === selfUser.id
+                      ? lang === 'ar'
+                        ? 'أرسلت طلبًا لتفعيل الحذف التلقائي؛ بانتظار موافقة الطرف الآخر.'
+                        : 'Your auto-delete request is waiting for the other participant.'
+                      : lang === 'ar'
+                        ? 'الطرف الآخر يطلب تفعيل الحذف التلقائي للرسائل.'
+                        : 'The other participant requested automatic message deletion.'
+                    : lang === 'ar'
+                      ? 'فعّلوا الوضع بموافقة الطرفين. يبدأ الحذف بعد مدة خمول تختارونها.'
+                      : 'Both participants must agree. Choose how long messages remain after inactivity.'}
+              </p>
+
+              {room.safe_chat_status === 'OFF' ? (
+                <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                  <select
+                    value={safeChatDuration}
+                    onChange={(event) => setSafeChatDuration(Number(event.target.value))}
+                    aria-label={lang === 'ar' ? 'مدة الحذف التلقائي' : 'Auto-delete duration'}
+                    className="min-h-10 rounded-xl border border-violet-200 bg-white px-3 text-xs font-semibold text-slate-800 dark:border-white/10 dark:bg-[#151221] dark:text-white"
+                  >
+                    <option value={60}>{lang === 'ar' ? 'دقيقة' : '1 minute'}</option>
+                    <option value={300}>{lang === 'ar' ? '5 دقائق' : '5 minutes'}</option>
+                    <option value={900}>{lang === 'ar' ? '15 دقيقة' : '15 minutes'}</option>
+                  </select>
+                  <button
+                    type="button"
+                    disabled={safeChatBusy}
+                    onClick={() => void updateSafeChat('REQUEST', safeChatDuration)}
+                    className="min-h-10 rounded-xl bg-violet-700 px-4 text-xs font-bold text-white disabled:opacity-50"
+                  >
+                    {lang === 'ar' ? 'طلب التفعيل' : 'Request Safe Chat'}
+                  </button>
+                </div>
+              ) : room.safe_chat_status === 'PENDING' ? (
+                <div className="mt-2.5 flex flex-wrap gap-2">
+                  {room.safe_chat_requested_by !== selfUser.id && (
+                    <button
+                      type="button"
+                      disabled={safeChatBusy}
+                      onClick={() => void updateSafeChat('ACCEPT')}
+                      className="min-h-10 rounded-xl bg-violet-700 px-4 text-xs font-bold text-white disabled:opacity-50"
+                    >
+                      {lang === 'ar' ? 'موافقة وبدء' : 'Accept & start'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={safeChatBusy}
+                    onClick={() => void updateSafeChat('DISABLE')}
+                    className="min-h-10 rounded-xl border border-slate-300 px-4 text-xs font-bold text-slate-700 dark:border-white/15 dark:text-slate-200 disabled:opacity-50"
+                  >
+                    {lang === 'ar' ? 'رفض / إلغاء' : 'Decline / cancel'}
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                  {captureSupported && (
+                    <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400">
+                      <Camera className="h-3.5 w-3.5" />
+                      {lang === 'ar' ? 'تنبيه الالتقاط مدعوم على هذا الجهاز' : 'Screenshot alerts supported on this device'}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    disabled={safeChatBusy}
+                    onClick={() => void updateSafeChat('DISABLE')}
+                    className="min-h-9 rounded-xl border border-slate-300 px-3 text-xs font-bold text-slate-700 dark:border-white/15 dark:text-slate-200 disabled:opacity-50"
+                  >
+                    {lang === 'ar' ? 'إيقاف الوضع' : 'Turn off'}
+                  </button>
+                </div>
+              )}
+              {safeChatNotice && (
+                <p role="status" className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">
+                  {safeChatNotice}
+                </p>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Real-Time Message Stream */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
         {room.status === 'PENDING' && (
@@ -358,6 +536,59 @@ export const ChatRoomView: React.FC<ChatRoomViewProps> = ({
                           ? 'تم تجميد الرسالة بواسطة نظام الحماية'
                           : 'Message frozen by safety moderation')}
                     </span>
+                  </div>
+                ) : msg.message_type === 'INTRO_CARD' && msg.introduction ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2.5">
+                      <FramedAvatar
+                        avatarUrl={msg.introduction.avatar_url}
+                        frameId={msg.introduction.frame_id}
+                        nickname={msg.introduction.nickname}
+                        size="sm"
+                      />
+                      <div className="min-w-0">
+                        <p className="flex items-center gap-1 text-xs font-bold">
+                          <span className="truncate">
+                            {msg.introduction.is_anonymous
+                              ? lang === 'ar'
+                                ? 'زائر مجهول'
+                                : 'Anonymous visitor'
+                              : msg.introduction.nickname}
+                          </span>
+                          {!msg.introduction.is_anonymous && (
+                            <OfficialBadge
+                              role={(isMe ? selfUser.role : peerUser.role)}
+                            />
+                          )}
+                        </p>
+                        <p className="text-[10px] opacity-70">
+                          {lang === 'ar' ? 'بطاقة تعارف' : 'Introduction card'}
+                          {msg.introduction.age ? ` · ${msg.introduction.age}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                    {msg.introduction.bio && (
+                      <p className="text-xs leading-relaxed opacity-90">{msg.introduction.bio}</p>
+                    )}
+                    {msg.introduction.interests.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {msg.introduction.interests.map((interest) => (
+                          <span
+                            key={interest}
+                            className={`rounded-full px-2 py-1 text-[10px] ${
+                              isMe
+                                ? 'bg-white/15 text-white'
+                                : 'bg-[#8B5CF6]/10 text-[#6D28D9] dark:text-purple-200'
+                            }`}
+                          >
+                            {interest}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <p className="whitespace-pre-wrap break-words border-t border-current/10 pt-2 text-sm font-medium leading-relaxed">
+                      {msg.content}
+                    </p>
                   </div>
                 ) : msg.media_type === 'image' && msg.media_url ? (
                   <div className="space-y-1.5">

@@ -13,6 +13,7 @@ import {
   ReportTargetType,
 } from '../db/realmLocalDB';
 import { isRunningInsideNativeAndroid, triggerLightHaptic } from './androidNative';
+import type { AppLang } from '../i18n/translations';
 
 export interface LiveMatchCandidate {
   peer: RealmUser;
@@ -97,6 +98,73 @@ export interface ManualTopupConfigDTO {
   updated_at?: number;
 }
 
+export interface InterestRequestDTO {
+  id: string;
+  direction: 'INCOMING' | 'OUTGOING';
+  sender_id?: string;
+  sender_nickname: string;
+  sender_avatar_url: string;
+  sender_frame_id: number;
+  sender_age?: number;
+  sender_bio: string;
+  sender_interests: string[];
+  intro_text: string;
+  is_anonymous: boolean;
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'IGNORED' | 'CANCELLED';
+  created_at: number;
+  updated_at: number;
+  accepted_room_id?: string;
+}
+
+export interface DiscoveryCandidateDTO {
+  peer: Pick<
+    RealmUser,
+    | 'id'
+    | 'nickname'
+    | 'avatar_url'
+    | 'frame_id'
+    | 'bio'
+    | 'interests'
+    | 'languages'
+    | 'country'
+    | 'is_online'
+    | 'is_premium'
+    | 'role'
+  > & { age: number };
+  commonInterests: string[];
+  score: number;
+}
+
+export interface CompanionBotDTO {
+  id: string;
+  name_ar: string;
+  name_en: string;
+  style_ar: string;
+  style_en: string;
+  is_ai: true;
+}
+
+export interface CompanionBotTurnDTO {
+  id: string;
+  role: 'USER' | 'BOT';
+  content: string;
+  created_at: number;
+}
+
+export interface CompanionBotConversationDTO {
+  id: string;
+  user_id: string;
+  bot_id: string;
+  turns: CompanionBotTurnDTO[];
+  updated_at: number;
+}
+
+export interface CompanionBotsResponseDTO {
+  bots: CompanionBotDTO[];
+  conversations: CompanionBotConversationDTO[];
+  disclosure: string;
+}
+
 type ConnectionState = 'connecting' | 'connected' | 'offline';
 type WalletNotice = {
   status: 'APPROVED' | 'REJECTED';
@@ -105,6 +173,10 @@ type WalletNotice = {
   premiumPlan?: Exclude<PremiumPlan, 'free'>;
   reason: string;
 };
+export interface InterestNotice {
+  kind: 'REQUEST' | 'ACCEPTED' | 'DECISION';
+  nickname?: string;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -122,8 +194,11 @@ class FadfadahNetworkClient {
   private stateListeners = new Set<() => void>();
   private manualClose = false;
   private latestWalletNotice: WalletNotice | null = null;
+  private latestInterestNotice: InterestNotice | null = null;
+  private latestSafeChatScreenshot: { roomId: string; nickname: string; createdAt: number } | null = null;
   private walletConfigListeners = new Set<() => void>();
   private manualTopupListeners = new Set<() => void>();
+  private interestRequestListeners = new Set<() => void>();
 
   getServerBaseUrl(): string {
     const customUrl = realmDB.getSettings().custom_server_url?.trim();
@@ -154,6 +229,19 @@ class FadfadahNetworkClient {
     return notice;
   }
 
+  takeInterestNotice(): InterestNotice | null {
+    const notice = this.latestInterestNotice;
+    this.latestInterestNotice = null;
+    return notice;
+  }
+
+  getSafeChatScreenshotNotice(roomId: string): { nickname: string; createdAt: number } | null {
+    const notice = this.latestSafeChatScreenshot;
+    return notice?.roomId === roomId
+      ? { nickname: notice.nickname, createdAt: notice.createdAt }
+      : null;
+  }
+
   getOnlineStats(): { onlineCount: number; queueSize: number } {
     return { onlineCount: this.onlineCount, queueSize: this.queueSize };
   }
@@ -181,6 +269,15 @@ class FadfadahNetworkClient {
   subscribeManualTopupUpdates(cb: () => void): () => void {
     this.manualTopupListeners.add(cb);
     return () => this.manualTopupListeners.delete(cb);
+  }
+
+  subscribeInterestRequestUpdates(cb: () => void): () => void {
+    this.interestRequestListeners.add(cb);
+    return () => this.interestRequestListeners.delete(cb);
+  }
+
+  private notifyInterestRequestListeners(): void {
+    for (const listener of this.interestRequestListeners) listener();
   }
 
   private notifyManualTopupListeners(): void {
@@ -795,6 +892,49 @@ class FadfadahNetworkClient {
     ) {
       this.notifyManualTopupListeners();
       this.emitState();
+    } else if (
+      type === 'interest:created' ||
+      type === 'interest:updated' ||
+      type === 'interest:accepted'
+    ) {
+      const request = ev.request as InterestRequestDTO | undefined;
+      if (type === 'interest:created' && request?.direction === 'INCOMING') {
+        this.latestInterestNotice = {
+          kind: 'REQUEST',
+          nickname: request.is_anonymous ? 'زائر مجهول' : request.sender_nickname,
+        };
+      } else if (type === 'interest:accepted') {
+        this.latestInterestNotice = { kind: 'ACCEPTED' };
+      } else if (
+        type === 'interest:updated' &&
+        request?.direction === 'OUTGOING' &&
+        (request.status === 'REJECTED' || request.status === 'IGNORED')
+      ) {
+        this.latestInterestNotice = { kind: 'DECISION' };
+      }
+      this.notifyInterestRequestListeners();
+      this.emitState();
+    } else if (type === 'safe-chat:updated' || type === 'safe-chat:expired') {
+      const room = ev.room as RealmChatRoom | undefined;
+      const roomId = String(ev.roomId || room?.id || '');
+      if (room) {
+        await realmDB.write((tx) => {
+          tx.create('chat_rooms', room);
+          if (type === 'safe-chat:expired') {
+            for (const message of realmDB.objects('messages')) {
+              if (message.room_id === roomId) tx.delete('messages', message.id);
+            }
+          }
+        });
+      }
+      this.emitState();
+    } else if (type === 'safe-chat:screenshot') {
+      this.latestSafeChatScreenshot = {
+        roomId: String(ev.roomId || ''),
+        nickname: typeof ev.nickname === 'string' ? ev.nickname : '',
+        createdAt: typeof ev.created_at === 'number' ? ev.created_at : Date.now(),
+      };
+      this.emitState();
     } else if (type === 'peer:updated') {
       const peer = ev.peer as RealmUser | undefined;
       if (peer && (!self || peer.id !== self.id)) {
@@ -1050,6 +1190,7 @@ class FadfadahNetworkClient {
     slug: string;
     country: string;
     bio: string;
+    age: number | null;
     avatar_url: string;
     frame_id: number;
     interests: string[];
@@ -1106,10 +1247,195 @@ class FadfadahNetworkClient {
     }
   }
 
+  async arePushNotificationsEnabled(): Promise<boolean> {
+    const res = await fetch(`${this.getServerBaseUrl()}/api/health`);
+    if (!res.ok) throw new Error('تعذر التحقق من إعداد الإشعارات.');
+    const data: unknown = await res.json();
+    return isRecord(data) && data.pushNotificationsEnabled === true;
+  }
+
+  async registerPushToken(token: string): Promise<void> {
+    const res = await fetch(`${this.getServerBaseUrl()}/api/push-tokens`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ token }),
+    });
+    const data: unknown = await res.json();
+    if (!res.ok) {
+      throw new Error(
+        isRecord(data) && typeof data.error === 'string'
+          ? data.error
+          : 'تعذر تسجيل إشعارات هذا الجهاز.'
+      );
+    }
+  }
+
+  async discoverPeople(filters: {
+    interests?: string[];
+    country?: string;
+    language?: string;
+  } = {}): Promise<DiscoveryCandidateDTO[]> {
+    const query = new URLSearchParams();
+    if (filters.interests?.length) query.set('interests', filters.interests.join(','));
+    if (filters.country) query.set('country', filters.country);
+    if (filters.language) query.set('language', filters.language);
+    const suffix = query.size ? `?${query.toString()}` : '';
+    const res = await fetch(`${this.getServerBaseUrl()}/api/discovery${suffix}`, {
+      headers: this.getAuthHeaders(),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'تعذر تحميل اقتراحات التعارف.');
+    if (!Array.isArray(data.candidates)) throw new Error('استجابة الاكتشاف غير صالحة.');
+    return data.candidates as DiscoveryCandidateDTO[];
+  }
+
+  async fetchCompanionBots(lang: AppLang): Promise<CompanionBotsResponseDTO> {
+    const res = await fetch(
+      `${this.getServerBaseUrl()}/api/bots?lang=${encodeURIComponent(lang)}`,
+      { headers: this.getAuthHeaders() }
+    );
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'تعذر تحميل شخصيات الذكاء الاصطناعي.');
+    if (!Array.isArray(data.bots) || !Array.isArray(data.conversations)) {
+      throw new Error('استجابة الشخصيات الذكية غير صالحة.');
+    }
+    return data as CompanionBotsResponseDTO;
+  }
+
+  async sendBotMessage(
+    botId: string,
+    content: string,
+    lang: AppLang
+  ): Promise<{ conversation: CompanionBotConversationDTO }> {
+    const res = await fetch(
+      `${this.getServerBaseUrl()}/api/bots/${encodeURIComponent(botId)}/messages`,
+      {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({ content, lang }),
+      }
+    );
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'تعذر إرسال الرسالة إلى الشخصية الذكية.');
+    if (!isRecord(data.conversation) || !Array.isArray(data.conversation.turns)) {
+      throw new Error('لم يؤكد الخادم حفظ المحادثة الذكية.');
+    }
+    return { conversation: data.conversation as CompanionBotConversationDTO };
+  }
+
+  async updateSafeChat(
+    roomId: string,
+    action: 'REQUEST' | 'ACCEPT' | 'DISABLE',
+    durationSeconds?: number
+  ): Promise<{ ok: boolean; error?: string }> {
+    const res = await fetch(
+      `${this.getServerBaseUrl()}/api/rooms/${encodeURIComponent(roomId)}/safe-chat`,
+      {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({ action, durationSeconds }),
+      }
+    );
+    const data = await res.json();
+    if (!res.ok) return { ok: false, error: data.error || 'تعذر تحديث وضع المحادثة الآمنة.' };
+    if (!data.room || typeof data.room.id !== 'string') {
+      return { ok: false, error: 'لم يؤكد الخادم تحديث وضع المحادثة الآمنة.' };
+    }
+    await realmDB.write((tx) => tx.create('chat_rooms', data.room as RealmChatRoom));
+    this.emitState();
+    return { ok: true };
+  }
+
+  async reportSafeChatScreenshot(roomId: string): Promise<void> {
+    const res = await fetch(
+      `${this.getServerBaseUrl()}/api/rooms/${encodeURIComponent(roomId)}/safe-chat/screenshot`,
+      { method: 'POST', headers: this.getAuthHeaders() }
+    );
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'تعذر إشعار الطرف الآخر بالتقاط الشاشة.');
+  }
+
+  async getInterestRequests(): Promise<InterestRequestDTO[]> {
+    const res = await fetch(`${this.getServerBaseUrl()}/api/interest-requests`, {
+      method: 'GET',
+      headers: this.getAuthHeaders(),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'تعذر تحميل طلبات التعارف.');
+    }
+    if (!Array.isArray(data.requests)) {
+      throw new Error('استجابة طلبات التعارف غير صالحة.');
+    }
+    return data.requests as InterestRequestDTO[];
+  }
+
+  async createInterestRequest(
+    targetUserId: string,
+    introText: string
+  ): Promise<{ ok: boolean; request?: InterestRequestDTO; error?: string }> {
+    const res = await fetch(`${this.getServerBaseUrl()}/api/interest-requests`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ targetUserId, introText }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      return { ok: false, error: data.error || 'تعذر إرسال طلب التعارف.' };
+    }
+    this.notifyInterestRequestListeners();
+    this.emitState();
+    return { ok: true, request: data.request as InterestRequestDTO };
+  }
+
+  async respondToInterestRequest(
+    requestId: string,
+    action: 'ACCEPT' | 'REJECT' | 'IGNORE' | 'BLOCK'
+  ): Promise<{ ok: boolean; roomId?: string; error?: string }> {
+    const res = await fetch(
+      `${this.getServerBaseUrl()}/api/interest-requests/${encodeURIComponent(requestId)}/respond`,
+      {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({ action }),
+      }
+    );
+    const data = await res.json();
+    if (!res.ok) {
+      return { ok: false, error: data.error || 'تعذر تحديث طلب التعارف.' };
+    }
+    if (data.room) {
+      await realmDB.write((tx) => {
+        if (data.peer && data.peer.id !== realmDB.findSelfUser()?.id) {
+          tx.create('users', {
+            premium_plan: 'free',
+            points: 0,
+            unlocked_frames: [0, 1],
+            blocked_user_ids: [],
+            daily_random_count: 0,
+            last_random_date: '',
+            role: 'user',
+            status: 'active',
+            ...data.peer,
+            is_self: false,
+          });
+        }
+        tx.create('chat_rooms', data.room as RealmChatRoom);
+        if (data.message) tx.create('messages', data.message as RealmMessage);
+      });
+    }
+    if (action === 'BLOCK' && !(await this.pullFullSync())) {
+      throw new Error('تم حفظ الحظر لكن تعذرت مزامنة قائمة الحظر.');
+    }
+    this.notifyInterestRequestListeners();
+    this.emitState();
+    return { ok: true, roomId: data.room?.id };
+  }
+
   async sendSecretLinkMessage(
     slug: string,
     payload: { content: string; senderAlias: string; senderAvatar: string }
-  ): Promise<{ ok: boolean; roomId?: string; error?: string }> {
+  ): Promise<{ ok: boolean; requestId?: string; error?: string }> {
     const res = await fetch(
       `${this.getServerBaseUrl()}/api/links/${encodeURIComponent(slug)}/send`,
       {
@@ -1137,37 +1463,16 @@ class FadfadahNetworkClient {
       }
     }
 
-    await realmDB.write((tx) => {
-      if (data.recipientPeer) {
-        const self = realmDB.findSelfUser();
-        if (!self || data.recipientPeer.id !== self.id) {
-          tx.create('users', {
-            premium_plan: 'free',
-            points: 0,
-            unlocked_frames: [0, 1],
-            blocked_user_ids: [],
-            daily_random_count: 0,
-            last_random_date: '',
-            role: 'user',
-            status: 'active',
-            ...data.recipientPeer,
-            is_self: false,
-          });
-        }
-      }
-      if (data.room) tx.create('chat_rooms', data.room);
-      if (data.message) tx.create('messages', data.message);
-    });
-
     await triggerLightHaptic();
-    return { ok: true, roomId: data.room?.id };
+    this.notifyInterestRequestListeners();
+    return { ok: true, requestId: data.request?.id };
   }
 
   async requestRandomMatch(
     targetPeerId: string,
     introText?: string
-  ): Promise<{ ok: boolean; room?: RealmChatRoom; quotaReached?: boolean; error?: string }> {
-    const res = await fetch(`${this.getServerBaseUrl()}/api/match/request`, {
+  ): Promise<{ ok: boolean; request?: InterestRequestDTO; quotaReached?: boolean; error?: string }> {
+    const res = await fetch(`${this.getServerBaseUrl()}/api/match/interest-request`, {
       method: 'POST',
       headers: this.getAuthHeaders(),
       body: JSON.stringify({ targetPeerId, introText }),
@@ -1179,29 +1484,15 @@ class FadfadahNetworkClient {
     if (!res.ok) {
       return { ok: false, error: data.message || data.error || 'تعذر إرسال طلب المحادثة.' };
     }
-
-    await realmDB.write((tx) => {
-      if (data.selfUser) tx.create('users', { ...data.selfUser, is_self: true });
-      if (data.peer) {
-        tx.create('users', {
-          premium_plan: data.peer.is_premium ? 'monthly' : 'free',
-          points: 0,
-          unlocked_frames: [0, 1],
-          blocked_user_ids: [],
-          daily_random_count: 0,
-          last_random_date: '',
-          role: data.peer.role || 'user',
-          status: data.peer.status || 'active',
-          ...data.peer,
-          is_self: false,
-        });
-      }
-      if (data.room) tx.create('chat_rooms', data.room);
-      if (data.message) tx.create('messages', data.message);
-    });
-
+    if (data.selfUser) {
+      await realmDB.write((tx) =>
+        tx.create('users', { ...data.selfUser, is_self: true } as RealmUser)
+      );
+    }
+    this.notifyInterestRequestListeners();
+    this.emitState();
     await triggerLightHaptic();
-    return { ok: true, room: data.room };
+    return { ok: true, request: data.request as InterestRequestDTO };
   }
 
   async respondToChatRequest(roomId: string, action: 'ACCEPT' | 'REJECT'): Promise<void> {
@@ -1337,7 +1628,8 @@ class FadfadahNetworkClient {
 
   async submitReport(params: {
     roomId?: string;
-    reportedUserId: string;
+    interestRequestId?: string;
+    reportedUserId?: string;
     target_type?: ReportTargetType;
     target_id?: string;
     reason: string;

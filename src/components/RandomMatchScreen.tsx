@@ -24,7 +24,6 @@ import {
 interface RandomMatchScreenProps {
   selfUser: RealmUser;
   lang: AppLang;
-  onOpenChatRoom: (roomId: string) => void;
   onNavigateUpgrade: () => void;
 }
 
@@ -46,7 +45,6 @@ function getRadarPosition(userId: string): { left: string; top: string } {
 export const RandomMatchScreen: React.FC<RandomMatchScreenProps> = ({
   selfUser,
   lang,
-  onOpenChatRoom,
   onNavigateUpgrade,
 }) => {
   const t = TRANSLATIONS[lang];
@@ -116,21 +114,17 @@ export const RandomMatchScreen: React.FC<RandomMatchScreenProps> = ({
       return;
     }
 
-    if (!res.ok || !res.room) {
+    if (!res.ok || !res.request) {
       setFeedbackBanner(res.error || (lang === 'ar' ? 'تعذر إرسال الطلب.' : 'Request failed.'));
       return;
     }
 
-    if (res.room.status === 'ACCEPTED') {
-      onOpenChatRoom(res.room.id);
-    } else {
-      setFeedbackBanner(
-        lang === 'ar'
-          ? `تم إرسال طلب محادثة حقيقي إلى ${currentMatch.peer.nickname}! ستفتح القناة فور قبوله للطلب.`
-          : `Live chat request sent to ${currentMatch.peer.nickname}!`
-      );
-      setCandidateIndex((prev) => prev + 1);
-    }
+    setFeedbackBanner(
+      lang === 'ar'
+        ? `تم إرسال طلب التعارف إلى ${currentMatch.peer.nickname}. ستبدأ المحادثة بعد موافقته؛ تابع الحالة من قسم طلبات التعارف.`
+        : `Introduction request sent to ${currentMatch.peer.nickname}. Chat starts only after acceptance; follow it in Requests.`
+    );
+    setCandidateIndex((prev) => prev + 1);
   };
 
   const handleUnlockExtraWithPoints = async () => {

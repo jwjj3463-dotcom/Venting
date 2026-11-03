@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Heart, MessageSquarePlus, Send, AlertTriangle } from 'lucide-react';
+import { Bot, Compass, Heart, MessageSquarePlus, Send, AlertTriangle, MessagesSquare } from 'lucide-react';
 import { FramedAvatar, OfficialBadge } from './FramedAvatar';
 import {
   RealmPublicVent,
@@ -9,13 +9,15 @@ import {
 import { fadfadahClient } from '../services/fadfadahNetworkClient';
 import { AppLang, TRANSLATIONS } from '../i18n/translations';
 import { AdBanner } from './AdBanner';
+import { SmartDiscoveryScreen } from './SmartDiscoveryScreen';
+import { CompanionBotsScreen } from './CompanionBotsScreen';
 
 interface ExploreVentScreenProps {
   selfUser: RealmUser;
   allUsers: RealmUser[];
   vents: RealmPublicVent[];
   lang: AppLang;
-  onOpenChatRoom: (roomId: string) => void;
+  onOpenProfile: () => void;
 }
 
 const VENT_TOPICS = ['الكل', 'فضفضة', 'فن وقراءة', 'دراسة وعمل', 'مواضيع عامة'];
@@ -25,9 +27,10 @@ export const ExploreVentScreen: React.FC<ExploreVentScreenProps> = ({
   allUsers,
   vents,
   lang,
-  onOpenChatRoom,
+  onOpenProfile,
 }) => {
   const t = TRANSLATIONS[lang];
+  const [activeSection, setActiveSection] = useState<'discovery' | 'wall' | 'bots'>('discovery');
   const [selectedTopic, setSelectedTopic] = useState<string>('الكل');
   const [newVentTopic, setNewVentTopic] = useState<string>('فضفضة');
   const [newVentText, setNewVentText] = useState<string>('');
@@ -41,7 +44,13 @@ export const ExploreVentScreen: React.FC<ExploreVentScreenProps> = ({
 
   const onlinePeers = useMemo(() => {
     return allUsers
-      .filter((u) => !u.is_self && u.is_online && !selfUser.blocked_user_ids.includes(u.id))
+      .filter(
+        (u) =>
+          !u.is_self &&
+          u.is_adult &&
+          u.is_online &&
+          !selfUser.blocked_user_ids.includes(u.id)
+      )
       .sort((a, b) => Number(isRealmPremiumActive(b)) - Number(isRealmPremiumActive(a)));
   }, [allUsers, selfUser.blocked_user_ids]);
 
@@ -80,17 +89,15 @@ export const ExploreVentScreen: React.FC<ExploreVentScreenProps> = ({
       ? `مرحباً ${peer.nickname}! رأيتك ضمن المتصلين الآن.`
       : `Hi ${peer.nickname}! Saw you in Online Now.`;
 
-    const res = await fadfadahClient.requestRandomMatch(peer.id, intro);
-    if (res.ok && res.room) {
-      if (res.room.status === 'ACCEPTED') {
-        onOpenChatRoom(res.room.id);
-      } else {
-        setReplyNotice(
-          lang === 'ar'
-            ? `تم إرسال طلب محادثة خاص إلى ${peer.nickname}.`
-            : `Private chat request sent to ${peer.nickname}.`
-        );
-      }
+    const res = await fadfadahClient.createInterestRequest(peer.id, intro);
+    if (res.ok) {
+      setReplyNotice(
+        lang === 'ar'
+          ? `تم إرسال طلب التعارف إلى ${peer.nickname}. ستبدأ المحادثة بعد موافقته.`
+          : `Introduction request sent to ${peer.nickname}. Chat starts after they accept.`
+      );
+    } else {
+      setReplyNotice(res.error || (lang === 'ar' ? 'تعذر إرسال الطلب.' : 'Could not send request.'));
     }
   };
 
@@ -102,7 +109,36 @@ export const ExploreVentScreen: React.FC<ExploreVentScreenProps> = ({
   };
 
   return (
-    <div className="p-4 sm:p-5 space-y-5 max-w-3xl mx-auto">
+    <div className="mx-auto max-w-3xl space-y-4 pb-4">
+      <nav className="sticky top-0 z-10 grid grid-cols-3 gap-1 border-b border-slate-200 bg-[#F8F9FA]/95 p-2 backdrop-blur dark:border-white/10 dark:bg-[#151221]/95">
+        {([
+          { id: 'discovery', label: lang === 'ar' ? 'اكتشف' : 'Discover', Icon: Compass },
+          { id: 'wall', label: lang === 'ar' ? 'الفضفضة العامة' : 'Public wall', Icon: MessagesSquare },
+          { id: 'bots', label: lang === 'ar' ? 'شخصيات ذكية' : 'AI characters', Icon: Bot },
+        ] as const).map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setActiveSection(id)}
+            aria-pressed={activeSection === id}
+            className={`flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl px-2 text-[10px] font-bold transition-colors sm:text-xs ${
+              activeSection === id
+                ? 'bg-[#2D1B69] text-white'
+                : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5'
+            }`}
+          >
+            <Icon className="h-4 w-4 shrink-0" />
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      {activeSection === 'discovery' ? (
+        <SmartDiscoveryScreen selfUser={selfUser} lang={lang} onOpenProfile={onOpenProfile} />
+      ) : activeSection === 'bots' ? (
+        <CompanionBotsScreen lang={lang} />
+      ) : (
+      <div className="space-y-5 p-4 sm:p-5">
       {/* Real Online Now Users Strip */}
       <section className="space-y-2.5">
         <div className="flex items-center justify-between">
@@ -408,9 +444,11 @@ export const ExploreVentScreen: React.FC<ExploreVentScreenProps> = ({
                 </div>
               </div>
             )}
+            </div>
           </div>
-        </div>
       )}
+    </div>
+    )}
     </div>
   );
 };

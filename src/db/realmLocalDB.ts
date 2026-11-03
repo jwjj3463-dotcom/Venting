@@ -59,6 +59,8 @@ export interface RealmUser {
   is_self: boolean;
   is_online: boolean;
   bio: string;
+  age?: number;
+  is_adult?: boolean;
   role: UserRole;
   status: AccountStatus;
   warning_message?: string;
@@ -93,6 +95,11 @@ export interface RealmChatRoom {
   last_message_preview: string;
   last_message_at: number;
   created_at: number;
+  safe_chat_status?: 'OFF' | 'PENDING' | 'ACTIVE';
+  safe_chat_requested_by?: string;
+  safe_chat_duration_seconds?: number;
+  safe_chat_last_activity_at?: number;
+  safe_chat_expires_at?: number;
 }
 
 export interface RealmMessage {
@@ -107,6 +114,16 @@ export interface RealmMessage {
   is_frozen: boolean;
   status: MessageStatus;
   created_at: number;
+  message_type?: 'TEXT' | 'INTRO_CARD';
+  introduction?: {
+    nickname: string;
+    avatar_url: string;
+    frame_id: number;
+    age?: number;
+    bio: string;
+    interests: string[];
+    is_anonymous: boolean;
+  };
 }
 
 export interface RealmReportModeration {
@@ -212,6 +229,7 @@ export const FADFADAH_REALM_SCHEMAS: RealmObjectSchema[] = [
       is_self: 'bool',
       is_online: 'bool',
       bio: 'string',
+      age: 'int?',
       role: 'string',
       status: 'string',
     },
@@ -226,6 +244,8 @@ export const FADFADAH_REALM_SCHEMAS: RealmObjectSchema[] = [
       is_active: 'bool',
       visits_count: 'int',
       created_at: 'date',
+      message_type: 'string?',
+      introduction: 'mixed?',
     },
   },
   {
@@ -241,6 +261,11 @@ export const FADFADAH_REALM_SCHEMAS: RealmObjectSchema[] = [
       last_message_preview: 'string',
       last_message_at: 'date',
       created_at: 'date',
+      safe_chat_status: 'string?',
+      safe_chat_requested_by: 'uuid?',
+      safe_chat_duration_seconds: 'int?',
+      safe_chat_last_activity_at: 'date?',
+      safe_chat_expires_at: 'date?',
     },
   },
   {
@@ -359,7 +384,7 @@ export class LocalRealmDB {
   };
   private listeners: Set<() => void> = new Set();
   private initialized = false;
-  public readonly schemaVersion = 391;
+  public readonly schemaVersion = 392;
 
   async open(): Promise<this> {
     if (this.initialized) return this;

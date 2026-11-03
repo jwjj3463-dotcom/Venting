@@ -492,7 +492,7 @@ async function startServer() {
     res.json({
       ok: true,
       package: 'com.fadfadahnative',
-      version: '3.10.6',
+      version: '3.11.0',
       onlineUsers: activeSockets.size,
       totalRegisteredUsers: serverDB.users.size,
     });

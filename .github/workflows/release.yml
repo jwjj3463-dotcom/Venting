@@ -48,6 +48,9 @@ jobs:
       - name: Configure Android APK updater
         run: node scripts/configure-android-updater.mjs
 
+      - name: Configure Safe Chat screenshot detection
+        run: node scripts/configure-android-safe-chat.mjs
+
       - name: Configure verified Android App Links
         env:
           ANDROID_APP_LINK_HOST: fadfada.94.237.56.203.nip.io
