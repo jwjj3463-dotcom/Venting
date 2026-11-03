@@ -189,6 +189,7 @@ class FadfadahNetworkClient {
   private onlineCount = 1;
   private queueSize = 0;
   private matchCandidates: LiveMatchCandidate[] = [];
+  private matchError: string | null = null;
   private matchQueuePreferences: { countryFilter: string; langFilter: string } | null = null;
   private typingUsersByRoom = new Map<string, boolean>();
   private stateListeners = new Set<() => void>();
@@ -248,6 +249,10 @@ class FadfadahNetworkClient {
 
   getMatchCandidates(): LiveMatchCandidate[] {
     return this.matchCandidates;
+  }
+
+  getMatchError(): string | null {
+    return this.matchError;
   }
 
   isPeerTypingInRoom(roomId: string): boolean {
@@ -1045,7 +1050,19 @@ class FadfadahNetworkClient {
       const roomId = String(ev.roomId || '');
       this.typingUsersByRoom.set(roomId, Boolean(ev.isTyping));
       this.emitState();
+    } else if (type === 'match:error') {
+      const settings = realmDB.getSettings();
+      const arabicMessage =
+        typeof ev.message === 'string' ? ev.message : 'تعذر الانضمام إلى رادار المطابقة.';
+      const englishMessage =
+        typeof ev.message_en === 'string'
+          ? ev.message_en
+          : 'Could not join the live match radar.';
+      this.matchCandidates = [];
+      this.matchError = settings.language === 'ar' ? arabicMessage : englishMessage;
+      this.emitState();
     } else if (type === 'match:candidates') {
+      this.matchError = null;
       const rawList = (ev.candidates as Array<LiveMatchCandidate>) || [];
       this.matchCandidates = rawList.map((c) => {
         const prev = realmDB.objectForPrimaryKey('users', c.peer.id);
@@ -1127,6 +1144,10 @@ class FadfadahNetworkClient {
 
   joinMatchmakingQueue(countryFilter: string, langFilter: string): void {
     this.matchQueuePreferences = { countryFilter, langFilter };
+    if (this.matchError) {
+      this.matchError = null;
+      this.emitState();
+    }
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(
         JSON.stringify({

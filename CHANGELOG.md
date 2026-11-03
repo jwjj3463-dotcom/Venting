@@ -4,6 +4,16 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.11.2 — إصلاح تشخيص رادار المطابقة | Match radar feedback fix
+
+### أُصلح
+
+- إظهار سبب تعذر الانضمام إلى رادار المطابقة بدل استمرار حالة البحث بصمت، مع الحفاظ على شرط الحساب غير الضيف والعمر 18 عامًا أو أكثر.
+
+### Fixed
+
+- Show why an account cannot join the live match radar instead of leaving it silently searching; retain the non-guest and age-18+ eligibility safeguards.
+
 ## 3.11.1 — محادثات الشخصيات الذكية | AI character conversations
 
 ### أُضيف
