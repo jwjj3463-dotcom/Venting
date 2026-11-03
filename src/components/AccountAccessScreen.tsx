@@ -49,6 +49,10 @@ export const AccountAccessScreen: React.FC<AccountAccessScreenProps> = ({
   const isLinking = purpose === 'link';
   const isBusy = busy || localBusy;
   const visibleError = error || localError;
+  const screenBackground = isLinking ? 'bg-[#2D1B69]' : 'fadfada-auth-background';
+  const cardBackground = isLinking
+    ? 'bg-[#1E1B2E]'
+    : 'bg-[#1E1B2E]/90 backdrop-blur-md';
 
   const runLocal = async (action: () => Promise<void>) => {
     setLocalBusy(true);
@@ -110,8 +114,12 @@ export const AccountAccessScreen: React.FC<AccountAccessScreenProps> = ({
     });
 
   return (
-    <main className="min-h-[100dvh] flex items-center justify-center p-5 bg-[#2D1B69] text-white">
-      <section className="w-full max-w-md rounded-3xl bg-[#1E1B2E] border border-white/10 p-6 space-y-5 shadow-2xl">
+    <main
+      className={`min-h-[100dvh] flex items-center justify-center p-5 ${screenBackground} text-white`}
+    >
+      <section
+        className={`w-full max-w-md rounded-3xl ${cardBackground} border border-white/10 p-6 space-y-5 shadow-2xl`}
+      >
         <header className="text-center space-y-2">
           <div className="w-14 h-14 mx-auto rounded-2xl bg-[#8B5CF6] flex items-center justify-center text-2xl font-bold">
             ف

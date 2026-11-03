@@ -4,6 +4,18 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.11.3 — هوية بصرية محدثة | Updated visual identity
+
+### أُضيف
+
+- تحديث أيقونة فضفضة مع الحفاظ على المقاسات المطلوبة لتطبيق Android والويب.
+- إضافة صورة خلفية لشاشات تسجيل الدخول وإنشاء الحساب دون تغيير تدفقات المصادقة.
+
+### Added
+
+- Refresh the Fadfada app icon while preserving the required Android and web asset sizes.
+- Add an artwork background to sign-in and account creation without changing authentication flows.
+
 ## 3.11.2 — إصلاح تشخيص رادار المطابقة | Match radar feedback fix
 
 ### أُصلح
