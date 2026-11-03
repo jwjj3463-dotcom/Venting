@@ -4,6 +4,18 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.11.5 — تحسين شاشة الدخول | Sign-in screen polish
+
+### أُضيف
+
+- تحديث شاشة الدخول والتسجيل بتصميم زجاجي واستخدام شعار التطبيق.
+- إضافة إطار ضوئي متحرك هادئ إلى أزرار المتابعة الأساسية، مع احترام إعداد تقليل الحركة.
+
+### Added
+
+- Refresh the sign-in and registration screen with a glass-style layout and the app logo.
+- Add a restrained animated accent border to primary authentication actions, respecting reduced-motion preferences.
+
 ## 3.11.4 — شاشة بدء فضفضة | Fadfada launch screen
 
 ### أُضيف

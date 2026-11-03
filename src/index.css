@@ -34,10 +34,74 @@
   initial-value: 0deg;
 }
 
+@property --fadfada-auth-button-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
 @keyframes fadfada-border-beam-orbit {
   to {
     --fadfada-border-angle: 360deg;
   }
+}
+
+@keyframes fadfada-auth-button-orbit {
+  to {
+    --fadfada-auth-button-angle: 360deg;
+  }
+}
+
+.auth-animated-border {
+  position: relative;
+  isolation: isolate;
+  transition:
+    transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    filter 250ms ease;
+}
+
+.auth-animated-border::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  padding: 1.5px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--fadfada-auth-button-angle),
+    transparent 0 22%,
+    rgb(232 121 249 / 45%) 34%,
+    #e879f9 47%,
+    #fff 50%,
+    transparent 57% 72%,
+    #a78bfa 82%,
+    #f0abfc 97%,
+    transparent 100%
+  );
+  pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: fadfada-auth-button-orbit 3s linear infinite;
+}
+
+.auth-animated-border:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+}
+
+.auth-animated-border:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.auth-animated-border:focus-visible {
+  outline: 2px solid #e879f9;
+  outline-offset: 3px;
+}
+
+.auth-animated-border:disabled::before {
+  display: none;
 }
 
 .border-beam {
@@ -96,5 +160,11 @@
 
   .border-beam::before {
     animation: none;
+  }
+
+  .auth-animated-border,
+  .auth-animated-border::before {
+    animation: none;
+    transition: none;
   }
 }

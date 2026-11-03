@@ -110,72 +110,75 @@ export const AccountAccessScreen: React.FC<AccountAccessScreenProps> = ({
     });
 
   return (
-    <main className="min-h-[100dvh] flex items-center justify-center p-5 bg-[#2D1B69] text-white">
-      <section className="w-full max-w-md rounded-3xl bg-[#1E1B2E] border border-white/10 p-6 space-y-5 shadow-2xl">
-        <header className="text-center space-y-2">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-[#8B5CF6] flex items-center justify-center text-2xl font-bold">
-            ف
+    <main className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[#100d1c] px-4 py-8 text-white sm:px-6">
+      <div aria-hidden="true" className="pointer-events-none absolute -left-24 -top-28 h-72 w-72 rounded-full bg-fuchsia-600/20 blur-[100px]" />
+      <div aria-hidden="true" className="pointer-events-none absolute -bottom-32 -right-20 h-80 w-80 rounded-full bg-violet-600/25 blur-[110px]" />
+      <section className="relative z-10 w-full max-w-md space-y-4 rounded-[30px] border border-white/15 bg-white/[0.07] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur-2xl sm:p-7">
+        <header className="space-y-3 text-center">
+          <div className="flex items-center justify-center gap-3">
+            <img
+              src="/app-logo.webp"
+              alt="شعار تطبيق فضفضة"
+              className="h-14 w-14 rounded-2xl border border-white/20 object-cover shadow-[0_8px_24px_rgba(197,63,188,0.3)]"
+            />
+            <div className="text-right">
+              <p className="text-lg font-extrabold tracking-tight">فضفضة</p>
+              <p className="text-xs text-purple-200/80">مساحتك الآمنة للكلام</p>
+            </div>
           </div>
-          <h1 className="text-xl font-bold">
-            {isLinking ? 'تأمين حساب فضفضة' : 'الدخول إلى فضفضة'}
-          </h1>
-          <p className="text-sm text-purple-200 leading-relaxed">
-            {isLinking
-              ? 'اربط بريدك الإلكتروني أو حساب Google بحسابك الحالي لتتمكن من استعادته على جهاز آخر. لن تتغير محادثاتك أو صلاحياتك.'
-              : 'استخدم Google أو بريدك الإلكتروني. لاستعادة حساب فضفضة قديم، استخدم رمز استرداده أولًا أو اربطه من إعدادات الحساب أثناء تسجيل الدخول.'}
-          </p>
+          <div className="space-y-1">
+            <h1 className="text-2xl font-bold tracking-tight">
+              {isLinking ? 'تأمين حساب فضفضة' : 'الدخول إلى فضفضة'}
+            </h1>
+            <p className="text-sm leading-relaxed text-purple-100/75">
+              {isLinking
+                ? 'اربط بريدك الإلكتروني أو حساب Google بحسابك الحالي لتتمكن من استعادته على جهاز آخر. لن تتغير محادثاتك أو صلاحياتك.'
+                : 'استخدم Google أو بريدك الإلكتروني. لاستعادة حساب فضفضة قديم، استخدم رمز استرداده أولًا أو اربطه من إعدادات الحساب أثناء تسجيل الدخول.'}
+            </p>
+          </div>
         </header>
 
         {!emailVerificationPending && !emailLinkVerificationPending && (
           <>
-            <button
-              type="button"
-              disabled={isBusy}
-              onClick={handleGoogle}
-              className="w-full min-h-[48px] rounded-xl bg-white text-slate-800 disabled:opacity-50 font-bold text-sm"
-            >
-              {isBusy ? 'جارٍ الاتصال...' : 'المتابعة باستخدام Google'}
-            </button>
-
-            <div className="flex items-center gap-3 text-xs text-purple-200/70">
-              <span className="h-px flex-1 bg-white/10" />
-              <span>أو بالبريد الإلكتروني</span>
-              <span className="h-px flex-1 bg-white/10" />
-            </div>
-
-            <form className="space-y-3" onSubmit={handleEmailSubmit}>
-              <label htmlFor="firebase-email" className="block text-xs font-semibold">
-                البريد الإلكتروني
-              </label>
-              <input
-                id="firebase-email"
-                type="email"
-                autoComplete="email"
-                inputMode="email"
-                required
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                dir="ltr"
-                className="w-full h-12 px-3 rounded-xl bg-black/30 border border-white/15 text-sm"
-              />
-              <label htmlFor="firebase-password" className="block text-xs font-semibold">
-                كلمة المرور
-              </label>
-              <input
-                id="firebase-password"
-                type="password"
-                autoComplete={mode === 'register' || isLinking ? 'new-password' : 'current-password'}
-                minLength={6}
-                required
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                dir="ltr"
-                className="w-full h-12 px-3 rounded-xl bg-black/30 border border-white/15 text-sm"
-              />
+            <form className="space-y-3.5" onSubmit={handleEmailSubmit}>
+              <div>
+                <label htmlFor="firebase-email" className="mb-1.5 block text-xs font-semibold text-purple-50">
+                  البريد الإلكتروني
+                </label>
+                <input
+                  id="firebase-email"
+                  type="email"
+                  autoComplete="email"
+                  inputMode="email"
+                  required
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  dir="ltr"
+                  placeholder="name@example.com"
+                  className="h-12 w-full rounded-2xl border border-white/15 bg-[#11101e]/65 px-4 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-fuchsia-300/70 focus:ring-2 focus:ring-violet-400/20"
+                />
+              </div>
+              <div>
+                <label htmlFor="firebase-password" className="mb-1.5 block text-xs font-semibold text-purple-50">
+                  كلمة المرور
+                </label>
+                <input
+                  id="firebase-password"
+                  type="password"
+                  autoComplete={mode === 'register' || isLinking ? 'new-password' : 'current-password'}
+                  minLength={6}
+                  required
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  dir="ltr"
+                  placeholder="••••••••"
+                  className="h-12 w-full rounded-2xl border border-white/15 bg-[#11101e]/65 px-4 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-fuchsia-300/70 focus:ring-2 focus:ring-violet-400/20"
+                />
+              </div>
               <button
                 type="submit"
                 disabled={isBusy || !email.trim() || password.length < 6}
-                className="w-full min-h-[46px] rounded-xl bg-[#8B5CF6] disabled:opacity-50 font-bold text-sm"
+                className="auth-animated-border min-h-[48px] w-full rounded-2xl bg-gradient-to-l from-fuchsia-600 to-violet-600 text-sm font-bold shadow-[0_10px_28px_rgba(142,67,211,0.32)] disabled:opacity-50"
               >
                 {isBusy
                   ? 'جارٍ التحقق...'
@@ -196,7 +199,7 @@ export const AccountAccessScreen: React.FC<AccountAccessScreenProps> = ({
                     setLocalMessage('أرسلنا رابط إعادة تعيين كلمة المرور إلى بريدك.');
                   }))
                 }
-                className="w-full min-h-[40px] text-xs font-semibold text-purple-200 underline disabled:opacity-50"
+                className="w-full min-h-[32px] text-xs font-semibold text-fuchsia-200 transition hover:text-white disabled:opacity-50"
               >
                 نسيت كلمة المرور؟
               </button>
@@ -210,24 +213,40 @@ export const AccountAccessScreen: React.FC<AccountAccessScreenProps> = ({
                   setMode(mode === 'login' ? 'register' : 'login');
                   setLocalError('');
                 }}
-                className="w-full min-h-[40px] text-xs font-semibold text-purple-200"
+                className="w-full min-h-[36px] text-xs font-semibold text-purple-100/90 transition hover:text-white"
               >
                 {mode === 'login' ? 'ليس لديك حساب؟ أنشئ حسابًا جديدًا' : 'لديك حساب؟ سجّل الدخول'}
               </button>
             )}
+
+            <div className="flex items-center gap-3 text-xs text-purple-100/55">
+              <span className="h-px flex-1 bg-white/15" />
+              <span>أو تابع باستخدام</span>
+              <span className="h-px flex-1 bg-white/15" />
+            </div>
+
+            <button
+              type="button"
+              disabled={isBusy}
+              onClick={handleGoogle}
+              className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl border border-white/20 bg-white/[0.94] text-sm font-bold text-slate-800 shadow-lg transition hover:bg-white disabled:opacity-50"
+            >
+              <span aria-hidden="true" className="text-lg font-extrabold text-[#4285F4]">G</span>
+              {isBusy ? 'جارٍ الاتصال...' : 'المتابعة باستخدام Google'}
+            </button>
           </>
         )}
 
         {emailVerificationPending && (
           <div className="space-y-3 text-center">
-            <p className="text-sm text-purple-100 leading-relaxed">
+            <p className="text-sm leading-relaxed text-purple-100">
               أرسلنا رسالة تحقق إلى بريدك. افتحها واضغط رابط التحقق، ثم ارجع إلى التطبيق.
             </p>
             <button
               type="button"
               disabled={isBusy}
               onClick={() => continueAfterEmailVerification(false)}
-              className="w-full min-h-[46px] rounded-xl bg-[#8B5CF6] disabled:opacity-50 font-bold text-sm"
+              className="auth-animated-border w-full min-h-[46px] rounded-2xl bg-gradient-to-l from-fuchsia-600 to-violet-600 text-sm font-bold shadow-lg disabled:opacity-50"
             >
               تم التحقق، متابعة
             </button>
@@ -235,7 +254,7 @@ export const AccountAccessScreen: React.FC<AccountAccessScreenProps> = ({
               type="button"
               disabled={isBusy}
               onClick={() => void runLocal(resendEmailVerification)}
-              className="w-full min-h-[40px] text-xs font-semibold text-purple-200 underline"
+              className="w-full min-h-[40px] text-xs font-semibold text-fuchsia-200 underline"
             >
               إعادة إرسال رسالة التحقق
             </button>
@@ -244,14 +263,14 @@ export const AccountAccessScreen: React.FC<AccountAccessScreenProps> = ({
 
         {emailLinkVerificationPending && (
           <div className="space-y-3 text-center">
-            <p className="text-sm text-purple-100 leading-relaxed">
+            <p className="text-sm leading-relaxed text-purple-100">
               أرسلنا رسالة تحقق إلى بريدك. افتحها واضغط الرابط، ثم ارجع لإكمال ربط الحساب.
             </p>
             <button
               type="button"
               disabled={isBusy}
               onClick={() => continueAfterEmailVerification(true)}
-              className="w-full min-h-[46px] rounded-xl bg-[#8B5CF6] disabled:opacity-50 font-bold text-sm"
+              className="auth-animated-border w-full min-h-[46px] rounded-2xl bg-gradient-to-l from-fuchsia-600 to-violet-600 text-sm font-bold shadow-lg disabled:opacity-50"
             >
               تم التحقق، متابعة الربط
             </button>
@@ -259,7 +278,7 @@ export const AccountAccessScreen: React.FC<AccountAccessScreenProps> = ({
               type="button"
               disabled={isBusy}
               onClick={() => void runLocal(resendEmailVerification)}
-              className="w-full min-h-[40px] text-xs font-semibold text-purple-200 underline"
+              className="w-full min-h-[40px] text-xs font-semibold text-fuchsia-200 underline"
             >
               إعادة إرسال رسالة التحقق
             </button>
@@ -269,13 +288,13 @@ export const AccountAccessScreen: React.FC<AccountAccessScreenProps> = ({
         {!isLinking && (
           <>
             <form
-              className="border-t border-white/10 pt-4 space-y-3"
+              className="space-y-3 border-t border-white/15 pt-4"
               onSubmit={(event) => {
                 event.preventDefault();
                 onRecoverAccount(recoveryCode);
               }}
             >
-              <label htmlFor="account-recovery-code" className="block text-xs font-semibold">
+              <label htmlFor="account-recovery-code" className="block text-xs font-semibold text-purple-50">
                 أو استعادة الحساب برمز الاسترداد
               </label>
               <input
@@ -289,24 +308,24 @@ export const AccountAccessScreen: React.FC<AccountAccessScreenProps> = ({
                   setRecoveryCode(event.target.value.replace(/[^a-fA-F0-9]/g, '').slice(0, 64))
                 }
                 placeholder="64 hexadecimal characters"
-                className="w-full h-12 px-3 rounded-xl bg-black/30 border border-white/15 text-sm font-mono tracking-wider"
+                className="h-12 w-full rounded-2xl border border-white/15 bg-[#11101e]/65 px-4 font-mono text-sm tracking-wider text-white outline-none transition placeholder:text-white/35 focus:border-fuchsia-300/70 focus:ring-2 focus:ring-violet-400/20"
               />
               <button
                 type="submit"
                 disabled={isBusy || recoveryCode.length !== 64}
-                className="w-full min-h-[46px] rounded-xl bg-white/10 disabled:opacity-50 font-bold text-sm"
+                className="w-full min-h-[46px] rounded-2xl border border-white/15 bg-white/10 text-sm font-bold transition hover:bg-white/15 disabled:opacity-50"
               >
                 استعادة حسابي
               </button>
             </form>
-            <p className="text-xs text-slate-300 text-center">
+            <p className="text-center text-xs leading-relaxed text-purple-100/65">
               الحساب الجديد لا يستعيد حسابًا سابقًا أو محادثاته. اربط تسجيل الدخول من إعدادات الحساب القديم قبل الانتقال إلى جهاز آخر.
             </p>
             <button
               type="button"
               disabled={isBusy}
               onClick={onCreateAccount}
-              className="w-full min-h-[42px] rounded-xl text-xs text-purple-200 underline disabled:opacity-50"
+              className="w-full min-h-[42px] rounded-2xl text-xs text-fuchsia-200 underline disabled:opacity-50"
             >
               إنشاء حساب مؤقت على هذا الجهاز
             </button>
@@ -314,12 +333,12 @@ export const AccountAccessScreen: React.FC<AccountAccessScreenProps> = ({
         )}
 
         {visibleError && (
-          <p role="alert" className="text-xs text-rose-300 text-center break-words">
+          <p role="alert" className="break-words text-center text-xs text-rose-300">
             {visibleError}
           </p>
         )}
         {localMessage && (
-          <p role="status" className="text-xs text-emerald-300 text-center">
+          <p role="status" className="text-center text-xs text-emerald-300">
             {localMessage}
           </p>
         )}
