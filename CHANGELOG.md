@@ -4,17 +4,31 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
-## 3.11.3 — هوية بصرية محدثة | Updated visual identity
+## 3.11.4 — شاشة بدء فضفضة | Fadfada launch screen
 
 ### أُضيف
 
 - تحديث أيقونة فضفضة مع الحفاظ على المقاسات المطلوبة لتطبيق Android والويب.
-- إضافة صورة خلفية لشاشات تسجيل الدخول وإنشاء الحساب دون تغيير تدفقات المصادقة.
+- عرض الصورة المختارة كشاشة بدء مستقلة قبل الدخول أو إنشاء الحساب.
+- استخدام الصورة نفسها في شاشة بدء Android الأصلية، مع الإبقاء على صفحات المصادقة كما كانت.
 
 ### Added
 
 - Refresh the Fadfada app icon while preserving the required Android and web asset sizes.
-- Add an artwork background to sign-in and account creation without changing authentication flows.
+- Show the selected artwork on a dedicated startup screen before sign-in or account creation.
+- Use the same image for the native Android launch screen while keeping authentication screens unchanged.
+
+## 3.11.3 — تحديث أيقونة التطبيق | App icon refresh
+
+### أُضيف
+
+- تحديث أيقونة فضفضة مع الحفاظ على المقاسات المطلوبة لتطبيق Android والويب.
+- عُرضت الصورة المختارة خلف صفحة الدخول والتسجيل في هذا الإصدار المؤقت؛ نُقلت إلى شاشة بدء مستقلة في 3.11.4.
+
+### Added
+
+- Refresh the Fadfada app icon while preserving the required Android and web asset sizes.
+- The selected artwork appeared behind sign-in and registration in this interim version; 3.11.4 moves it to a dedicated launch screen.
 
 ## 3.11.2 — إصلاح تشخيص رادار المطابقة | Match radar feedback fix
 

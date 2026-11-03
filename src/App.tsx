@@ -41,6 +41,7 @@ import { AnonymousWebGatewayModal } from './components/AnonymousWebGatewayModal'
 import { AdInterstitialModal } from './components/AdInterstitialModal';
 import { AndroidAppUpdatePrompt } from './components/AndroidAppUpdatePrompt';
 import { AccountAccessScreen } from './components/AccountAccessScreen';
+import { StartupSplashScreen } from './components/StartupSplashScreen';
 import { adService } from './services/adService';
 import { TRANSLATIONS } from './i18n/translations';
 
@@ -66,6 +67,7 @@ function getSharedSlugFromUrl(value: string): string | null {
 }
 
 export default function App() {
+  const [startupSplashVisible, setStartupSplashVisible] = useState(true);
   const [ready, setReady] = useState(false);
   const [bootError, setBootError] = useState('');
   const [accountAccessRequired, setAccountAccessRequired] = useState(false);
@@ -87,6 +89,11 @@ export default function App() {
   const [interestNotice, setInterestNotice] = useState<
     ReturnType<typeof fadfadahClient.takeInterestNotice>
   >(null);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setStartupSplashVisible(false), 2500);
+    return () => window.clearTimeout(timeout);
+  }, []);
 
   useEffect(
     () =>
@@ -358,6 +365,10 @@ export default function App() {
       setOwnerRecoveryBusy(false);
     }
   };
+
+  if (startupSplashVisible) {
+    return <StartupSplashScreen />;
+  }
 
   if (bootError && !recoveryCodeToSave) {
     return (
