@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
   <head>
-    <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#110d20">
+    <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#100b1b">
     <meta name="description" content="حمّل تطبيق فضفضة الرسمي لنظام Android من GitHub Releases، وتحقق من خطوات التثبيت والتحديث.">
     <meta property="og:title" content="تحميل فضفضة | Fadfada"><meta property="og:description" content="اعثر على أحدث إصدار رسمي من تطبيق فضفضة Android.">
     <link rel="canonical" href="https://jwjj3463-dotcom.github.io/Venting/download.html"><link rel="icon" href="./assets/fadfada-icon.png"><link rel="stylesheet" href="./styles.css">
@@ -10,8 +10,29 @@
   <body id="top">
     <header class="site-header"><a class="brand" href="./index.html"><img src="./assets/fadfada-icon.png" alt="" width="42" height="42"><span>فضفضة<small>FADFADA</small></span></a><button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="فتح القائمة"><span></span><span></span></button><nav class="site-nav" id="site-nav" aria-label="القائمة الرئيسية"><a href="./index.html">الرئيسية</a><a href="./about.html">عن المنصة</a><a href="./features.html">المميزات</a><a href="./gallery.html">المعرض</a><a href="./contact.html">اتصل بنا</a></nav><a class="button button-small header-cta" href="./download.html" aria-current="page">حمّل التطبيق <span>↙</span></a></header>
     <main>
-      <section class="download-page-hero section-shell"><div><span class="eyebrow">فضفضة على Android</span><h1>ابدأ حكايتك<br><span class="gradient-text">من هنا.</span></h1><p>نزّل أحدث إصدار رسمي من المصدر المعتمد للمشروع. الإصدار الظاهر في صفحة GitHub هو المرجع الأحدث دائمًا.</p><a class="button" href="https://github.com/jwjj3463-dotcom/Venting/releases/latest" rel="noopener">عرض أحدث إصدار رسمي <span aria-hidden="true">↗</span></a><small>سيتم فتح صفحة الإصدارات على GitHub، حيث يظهر ملف APK وبيانات الإصدار.</small></div><div class="download-icon"><div class="download-ring"></div><img src="./assets/fadfada-icon.png" alt="أيقونة فضفضة" width="208" height="208"><span>ANDROID APP</span></div></section>
-      <section class="section-shell install-steps"><div class="section-heading"><div><span class="eyebrow">خطوات بسيطة</span><h2>من التنزيل<br><span class="muted-heading">إلى أول حوار.</span></h2></div><p>استخدم ملفات الإصدار المستقر المنشور، وتحقق من مصدره قبل التثبيت.</p></div><div class="steps-grid"><article><span>01</span><h3>افتح صفحة الإصدار</h3><p>من زر التحميل، انتقل إلى أحدث إصدار مستقر على GitHub.</p></article><article><span>02</span><h3>نزّل ملف APK</h3><p>اختر <b>app-release.apk</b> من ملفات الإصدار الرسمية.</p></article><article><span>03</span><h3>ثبّت أو حدّث</h3><p>اسمح بالتثبيت من مصدر التنزيل إذا طلب Android ذلك. لا تحذف النسخة الحالية عند تحديثها.</p></article></div><div class="download-warning"><span>!</span><p>نزّل التطبيق فقط من إصدار GitHub الرسمي. إذا ظهرت مشكلة في التثبيت أو التحديث، راسل فريق الدعم وأرفق رقم الإصدار ورسالة الخطأ دون مشاركة بيانات الدخول.</p></div></section>
+      <section class="download-page-hero section-shell">
+        <div class="release-copy">
+          <span class="eyebrow">فضفضة على Android</span>
+          <h1>مساحتك<br><span class="gradient-text">تبدأ هنا.</span></h1>
+          <p>حمّل التطبيق من الإصدار الرسمي المنشور على GitHub. تُحدّث بيانات الإصدار وحجم ملف APK تلقائيًا عند توفرها.</p>
+          <div class="release-card">
+            <div class="release-card-heading"><span class="release-status-dot"></span><span>الإصدار الرسمي الأحدث</span><span class="release-stable">مستقر</span></div>
+            <div class="release-details">
+              <span>الإصدار <b id="release-tag">جارٍ التحقق</b></span>
+              <span>حجم APK <b id="release-size">جارٍ التحقق</b></span>
+              <span>تاريخ النشر <b id="release-date">جارٍ التحقق</b></span>
+            </div>
+            <a class="button release-download" id="download-apk" href="https://github.com/jwjj3463-dotcom/Venting/releases/latest/download/app-release.apk">تنزيل APK الرسمي <span aria-hidden="true">↓</span></a>
+            <p class="release-status" id="release-status" aria-live="polite">يُحمّل التطبيق مباشرة من صفحة الإصدارات الرسمية.</p>
+          </div>
+          <div class="release-links">
+            <a href="https://github.com/jwjj3463-dotcom/Venting/releases/latest" id="release-page" rel="noopener">ملاحظات الإصدار <span aria-hidden="true">↗</span></a>
+            <a href="https://github.com/jwjj3463-dotcom/Venting/releases/latest/download/android-release-checksums.txt" rel="noopener">بصمة SHA-256 <span aria-hidden="true">↗</span></a>
+          </div>
+        </div>
+        <div class="download-icon"><div class="download-ring"></div><img src="./assets/fadfada-icon.png" alt="أيقونة فضفضة" width="208" height="208"><span>ANDROID APP</span></div>
+      </section>
+      <section class="section-shell install-steps"><div class="section-heading"><div><span class="eyebrow">خطوات بسيطة</span><h2>من التنزيل<br><span class="muted-heading">إلى أول حوار.</span></h2></div><p>احصل على ملف التثبيت من صفحة فضفضة الرسمية، ثم اتبع تعليمات Android.</p></div><div class="steps-grid"><article><span>01</span><h3>ابدأ التنزيل</h3><p>اضغط زر «تنزيل APK الرسمي» لتنزيل أحدث ملف من GitHub.</p></article><article><span>02</span><h3>انتظر اكتمال الملف</h3><p>تحقق من اكتمال التنزيل قبل فتح ملف <b>app-release.apk</b>.</p></article><article><span>03</span><h3>ثبّت أو حدّث</h3><p>اسمح بالتثبيت من مصدر التنزيل إذا طلب Android ذلك. عند التحديث، لا تحذف النسخة الحالية.</p></article></div><div class="download-warning"><span>!</span><p>نزّل التطبيق فقط من إصدار GitHub الرسمي. إذا ظهرت مشكلة في التثبيت أو التحديث، راسل فريق الدعم وأرفق رقم الإصدار ورسالة الخطأ دون مشاركة بيانات الدخول.</p></div></section>
     </main>
     <footer class="site-footer"><div class="section-shell footer-top"><a class="brand footer-brand" href="./index.html"><img src="./assets/fadfada-icon.png" alt="" width="46" height="46"><span>فضفضة<small>FADFADA</small></span></a><p>مساحة عربية للتواصل الحقيقي واكتشاف حكايات جديدة.</p><a class="footer-contact" href="mailto:joogamil63@gmail.com">joogamil63@gmail.com <span>↗</span></a></div><div class="section-shell footer-bottom"><span>© <span data-year>2026</span> فضفضة | Fadfada</span><nav aria-label="روابط قانونية"><a href="./privacy.html">سياسة الخصوصية</a><a href="./terms.html">شروط الاستخدام</a><a href="./contact.html">اتصل بنا</a></nav><a href="#top" class="back-top">إلى الأعلى ↑</a></div></footer><script src="./site.js" defer></script>
   </body>
