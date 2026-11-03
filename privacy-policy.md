@@ -1,6 +1,6 @@
 # Fadfada (فضفضة) Privacy Policy
 
-**Last updated: November 2, 2026**
+**Last updated: November 3, 2026**
 
 This policy describes how the Fadfada Android app (`com.fadfadahnative`) handles information. “Fadfada” in this document means the app and service, not a separately verified registered company.
 
@@ -21,6 +21,7 @@ Information is used to authenticate accounts, create and maintain profiles and p
 
 - **Google Firebase Authentication** handles sign-in and email verification. Google processes that information under its own terms and privacy disclosures.
 - **Google Gemini** may receive submitted text and, where applicable, images for automated safety moderation if the service operator has configured a Gemini API key on the server. Without that configuration, moderation uses the server's built-in checks instead.
+- **OpenRouter** receives messages and recent conversation context from AI-character chats when that feature is configured, to generate responses using its free-model router. OpenRouter and the selected model provider process that content under their applicable terms and privacy policies. Do not send sensitive information to AI characters.
 - **Google AdMob** is integrated in the app. Whether ads are active depends on the release and server configuration. If enabled, Google may process device and ad-interaction information under Google's applicable policies; the app requests consent information before requesting ads.
 - **GitHub** serves app release information and update downloads. When the app checks for or downloads an update, GitHub may receive ordinary connection information.
 
@@ -48,7 +49,7 @@ We may update this policy when the service or its data practices change. The lat
 
 # سياسة خصوصية فضفضة (Fadfada)
 
-**آخر تحديث: 2 نوفمبر 2026**
+**آخر تحديث: 3 نوفمبر 2026**
 
 توضح هذه السياسة كيفية تعامل تطبيق فضفضة لنظام Android (`com.fadfadahnative`) مع المعلومات. ويقصد باسم «فضفضة» هنا التطبيق والخدمة، وليس شركة مسجلة تم التحقق من وجودها.
 
@@ -69,6 +70,7 @@ We may update this policy when the service or its data practices change. The lat
 
 - **Google Firebase Authentication** لتسجيل الدخول والتحقق من البريد. وتعالج Google هذه المعلومات وفق شروطها وإفصاحاتها المتعلقة بالخصوصية.
 - **Google Gemini** قد يتلقى النصوص المرسلة، والصور عند الاقتضاء، للمساعدة في الإشراف الآلي على السلامة إذا تم إعداد مفتاح Gemini API على الخادم. وفي غياب هذا الإعداد، يستخدم الخادم فحوصه المدمجة.
+- **OpenRouter** يتلقى رسائل وسياقًا حديثًا من محادثة الشخصيات الذكية عند تهيئة الميزة، لتوليد الردود عبر موجّه النماذج المجاني. وتعالج OpenRouter ومزود النموذج المختار هذا المحتوى وفق الشروط وسياسات الخصوصية الخاصة بهما. لا ترسل معلومات حساسة إلى الشخصيات الذكية.
 - **Google AdMob** مدمج في التطبيق، لكن ظهور الإعلانات يعتمد على إعدادات الإصدار والخادم. وعند تفعيلها قد تعالج Google معلومات الجهاز والتفاعل مع الإعلانات وفق سياساتها السارية؛ ويطلب التطبيق معلومات الموافقة قبل طلب الإعلانات.
 - **GitHub** يستضيف معلومات الإصدارات والتنزيلات. وعند تحقق التطبيق من تحديث أو تنزيله، قد يستقبل GitHub معلومات الاتصال المعتادة.
 

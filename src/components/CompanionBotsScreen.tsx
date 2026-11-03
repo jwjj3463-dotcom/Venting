@@ -113,8 +113,8 @@ export const CompanionBotsScreen: React.FC<CompanionBotsScreenProps> = ({ lang }
             <p className="mt-1 text-[11px] leading-relaxed text-violet-100">
               {data?.disclosure ||
                 (isArabic
-                  ? 'هذه شخصيات ذكاء اصطناعي وليست أشخاصًا حقيقيين.'
-                  : 'These are AI characters, not real people.')}
+                  ? 'هذه شخصيات ذكاء اصطناعي وليست أشخاصًا حقيقيين. عند تهيئة الخدمة، تُرسل رسائلك وسياق المحادثة إلى OpenRouter لتوليد الردود.'
+                  : 'These are AI characters, not real people. When configured, your messages and conversation context are sent to OpenRouter to generate replies.')}
             </p>
           </div>
         </div>

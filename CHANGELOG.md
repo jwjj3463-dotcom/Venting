@@ -4,6 +4,20 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.11.1 — محادثات الشخصيات الذكية | AI character conversations
+
+### أُضيف
+
+- ربط ردود الشخصيات الذكية بموجّه OpenRouter المجاني، مع حفظ مفتاح الخدمة على الخادم فقط.
+- توضيح أن الشخصيات افتراضية، وأن رسائلها وسياق المحادثة يُرسلان إلى OpenRouter لتوليد الردود.
+- تحديث سياسة الخصوصية العربية والإنجليزية ومعلومات مزود الخدمة.
+
+### Added
+
+- Connect AI-character replies to OpenRouter's free-model router; the API key remains server-side.
+- Disclose that characters are AI and that messages and conversation context are sent to OpenRouter to generate replies.
+- Update the Arabic and English privacy policy and service-provider details.
+
 ## 3.11.0 — طلبات التعارف وSafe Chat | Introduction requests and Safe Chat
 
 ### أُضيف
