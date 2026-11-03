@@ -13,6 +13,7 @@ const DB_FILE = path.join(DATA_DIR, 'fadfadah.db.json');
 
 export type UserRole = 'owner' | 'moderator' | 'user';
 export type AccountStatus = 'active' | 'warned' | 'restricted' | 'suspended' | 'banned';
+export const OWNER_MIN_POINTS = 1_000_000;
 
 export type ChatRoomType = 'LINK_BASED' | 'RANDOM';
 export type ChatRoomStatus = 'PENDING' | 'ACCEPTED' | 'BLOCKED';
@@ -35,6 +36,7 @@ export type PaymentTransactionType =
   | 'SUBSCRIPTION'
   | 'POINTS_PACK'
   | 'MANUAL_TOPUP'
+  | 'ADMIN_CREDIT'
   | 'FRAME_PURCHASE'
   | 'QUOTA_UNLOCK';
 export type PaymentStatus = 'COMPLETED' | 'FAILED' | 'REFUNDED';
@@ -377,6 +379,7 @@ export class FadfadahServerDB {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
     if (fs.existsSync(DB_FILE)) {
+      let ownerPointsChanged = false;
       try {
         const raw = await fsp.readFile(DB_FILE, 'utf-8');
         const parsed = JSON.parse(raw) as Partial<PersistedDatabaseShape>;
@@ -384,6 +387,13 @@ export class FadfadahServerDB {
           // Backward compatibility defaults
           if (!u.role) u.role = 'user';
           if (!u.status) u.status = 'active';
+          if (
+            u.role === 'owner' &&
+            (!Number.isFinite(u.points) || u.points < OWNER_MIN_POINTS)
+          ) {
+            u.points = OWNER_MIN_POINTS;
+            ownerPointsChanged = true;
+          }
           this.users.set(u.id, u);
           this.tokenIndex.set(u.auth_token_hash, u.id);
         }
@@ -433,9 +443,11 @@ export class FadfadahServerDB {
           this.chatCardSettingMigrated = true;
           this.scheduleSave();
         }
-
       } catch (err) {
         console.error('Failed to read existing fadfadah.db.json, starting fresh:', err);
+      }
+      if (ownerPointsChanged) {
+        await this.flushNow();
       }
     } else {
       this.chatCardSettingMigrated = true;
@@ -674,6 +686,9 @@ export class FadfadahServerDB {
     if (!user) return false;
 
     user.role = 'owner';
+    if (!Number.isFinite(user.points) || user.points < OWNER_MIN_POINTS) {
+      user.points = OWNER_MIN_POINTS;
+    }
     this.ownerBootstrapCompleted = true;
     this.scheduleSave();
     return true;
@@ -689,11 +704,16 @@ export class FadfadahServerDB {
     if (!user || user.role !== 'user') return false;
 
     user.role = 'owner';
+    const previousPoints = user.points;
+    if (!Number.isFinite(user.points) || user.points < OWNER_MIN_POINTS) {
+      user.points = OWNER_MIN_POINTS;
+    }
     this.ownerRecoveryCompleted = true;
     try {
       await this.flushNow();
     } catch (error) {
       user.role = 'user';
+      user.points = previousPoints;
       this.ownerRecoveryCompleted = false;
       throw error;
     }

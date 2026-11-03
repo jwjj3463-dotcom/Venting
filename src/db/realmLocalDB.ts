@@ -29,6 +29,7 @@ export type PaymentTransactionType =
   | 'SUBSCRIPTION'
   | 'POINTS_PACK'
   | 'MANUAL_TOPUP'
+  | 'ADMIN_CREDIT'
   | 'FRAME_PURCHASE'
   | 'QUOTA_UNLOCK';
 export type PaymentStatus = 'COMPLETED' | 'FAILED' | 'REFUNDED';

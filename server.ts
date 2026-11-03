@@ -28,6 +28,7 @@ import {
   type AccountStatus,
   type ReportTargetType,
   type ReportStatus,
+  OWNER_MIN_POINTS,
 } from './server/fadfadahServerDB.ts';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -2337,6 +2338,96 @@ async function startServer() {
     res.json({ users });
   });
 
+  app.post('/api/admin/users/coins', async (req: Request, res: Response) => {
+    const staff = serverDB.authenticateToken(extractBearerToken(req));
+    if (!staff || staff.role !== 'owner') {
+      res.status(403).json({ error: 'FORBIDDEN_OWNER_ONLY' });
+      return;
+    }
+    if (!verifyAccountActive(staff, res)) return;
+
+    const username =
+      typeof req.body?.username === 'string' ? req.body.username.trim().toLowerCase() : '';
+    const amount = req.body?.amount;
+    if (!username || username.length > 64) {
+      res.status(400).json({ error: 'INVALID_USERNAME' });
+      return;
+    }
+    if (!Number.isSafeInteger(amount) || amount < 1 || amount > 10_000_000) {
+      res.status(400).json({ error: 'INVALID_COIN_AMOUNT' });
+      return;
+    }
+
+    const exactSlugMatches = Array.from(serverDB.personalLinks.values())
+      .filter((link) => link.slug.toLowerCase() === username)
+      .map((link) => serverDB.users.get(link.user_id))
+      .filter((user): user is ServerUserRecord => Boolean(user));
+    const exactNicknameMatches = Array.from(serverDB.users.values()).filter(
+      (user) => user.nickname.trim().toLowerCase() === username
+    );
+    const matches = exactSlugMatches.length ? exactSlugMatches : exactNicknameMatches;
+    if (matches.length === 0) {
+      res.status(404).json({ error: 'USER_NOT_FOUND' });
+      return;
+    }
+    if (matches.length > 1) {
+      res.status(409).json({ error: 'USERNAME_NOT_UNIQUE' });
+      return;
+    }
+
+    const targetUser = matches[0];
+    const previousPoints = targetUser.points;
+    const pointsBalance = previousPoints + amount;
+    if (!Number.isSafeInteger(previousPoints) || !Number.isSafeInteger(pointsBalance)) {
+      res.status(409).json({ error: 'COIN_BALANCE_LIMIT_REACHED' });
+      return;
+    }
+
+    const transactionId = crypto.randomUUID();
+    const transaction: ServerPaymentTransaction = {
+      id: transactionId,
+      user_id: targetUser.id,
+      user_nickname: targetUser.nickname,
+      type: 'ADMIN_CREDIT',
+      item_id: 'admin-coin-grant',
+      item_title: `منح عملات إدارية بواسطة ${staff.nickname}`,
+      amount_usd: 0,
+      amount_currency: 'ADMIN_GRANT',
+      points_delta: amount,
+      status: 'COMPLETED',
+      order_id: `admin-coin-grant-${transactionId}`,
+      idempotency_key: `admin-coin-grant-${transactionId}`,
+      created_at: Date.now(),
+    };
+    targetUser.points = pointsBalance;
+    serverDB.paymentTransactions.set(transaction.id, transaction);
+    serverDB.idempotencyKeys.add(transaction.idempotency_key);
+
+    try {
+      await serverDB.flushNow();
+    } catch (error) {
+      targetUser.points = previousPoints;
+      serverDB.paymentTransactions.delete(transaction.id);
+      serverDB.idempotencyKeys.delete(transaction.idempotency_key);
+      console.error('Admin coin grant persistence failed:', error);
+      res.status(500).json({ error: 'COIN_GRANT_STORAGE_FAILED' });
+      return;
+    }
+
+    sendToUser(targetUser.id, {
+      type: 'wallet:admin_credit',
+      points_delta: amount,
+      points_balance: pointsBalance,
+      transaction,
+    });
+    res.json({
+      ok: true,
+      nickname: targetUser.nickname,
+      points_delta: amount,
+      points_balance: pointsBalance,
+    });
+  });
+
   app.post('/api/admin/users/:userId/status', (req: Request, res: Response) => {
     const staff = serverDB.authenticateToken(extractBearerToken(req));
     if (!staff || (staff.role !== 'owner' && staff.role !== 'moderator')) {
@@ -2386,6 +2477,12 @@ async function startServer() {
     // Role modification (Owner only)
     if (role && staff.role === 'owner') {
       targetUser.role = role;
+      if (
+        role === 'owner' &&
+        (!Number.isFinite(targetUser.points) || targetUser.points < OWNER_MIN_POINTS)
+      ) {
+        targetUser.points = OWNER_MIN_POINTS;
+      }
     }
 
     const auditAction: ServerModerationAction = {
@@ -2420,6 +2517,7 @@ async function startServer() {
       ban_reason: targetUser.ban_reason,
       suspension_until: targetUser.suspension_until,
       role: targetUser.role,
+      points: targetUser.points,
     });
 
     broadcastStaff({

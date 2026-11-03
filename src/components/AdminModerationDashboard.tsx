@@ -84,6 +84,9 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
   // Users Management
   const [userQuery, setUserQuery] = useState('');
   const [usersList, setUsersList] = useState<any[]>([]);
+  const [coinGrantUsername, setCoinGrantUsername] = useState('');
+  const [coinGrantAmount, setCoinGrantAmount] = useState('');
+  const [grantingCoins, setGrantingCoins] = useState(false);
 
   // Financial Ledger
   const [transactions, setTransactions] = useState<RealmPaymentTransaction[]>([]);
@@ -311,6 +314,61 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
     });
     await loadCurrentData();
     setActionNotice(lang === 'ar' ? 'تم تحديث الحساب بنجاح.' : 'User status updated.');
+  };
+
+  const handleGrantCoins = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const username = coinGrantUsername.trim();
+    const amount = Number(coinGrantAmount);
+    if (!username || !Number.isSafeInteger(amount) || amount < 1 || amount > 10_000_000) {
+      setErrorMessage(
+        lang === 'ar'
+          ? 'أدخل اسم مستخدم صحيحًا وعدد عملات صحيحًا بين 1 و10,000,000.'
+          : 'Enter a username and a whole coin amount between 1 and 10,000,000.'
+      );
+      return;
+    }
+
+    setGrantingCoins(true);
+    setErrorMessage('');
+    setActionNotice('');
+    try {
+      const result = await fadfadahClient.grantAdminCoins(username, amount);
+      if (!result.ok) {
+        const messages: Record<string, [string, string]> = {
+          USER_NOT_FOUND: ['لم يتم العثور على حساب بهذا الاسم أو المعرّف.', 'No account matches that username.'],
+          USERNAME_NOT_UNIQUE: [
+            'الاسم متكرر؛ استخدم المعرّف الشخصي الفريد للحساب.',
+            'That nickname is shared by multiple accounts; use the account’s unique profile slug.',
+          ],
+          INVALID_USERNAME: ['اسم المستخدم غير صالح.', 'The username is invalid.'],
+          INVALID_COIN_AMOUNT: ['عدد العملات غير صالح.', 'The coin amount is invalid.'],
+          COIN_BALANCE_LIMIT_REACHED: ['تعذر إضافة العملات بسبب تجاوز حد الرصيد.', 'The resulting balance exceeds the supported limit.'],
+          FORBIDDEN_OWNER_ONLY: ['إضافة العملات متاحة لمالك المنصة فقط.', 'Only the platform owner can grant coins.'],
+        };
+        const [arabicMessage, englishMessage] = messages[result.error || ''] || [
+          'تعذرت إضافة العملات؛ حاول مرة أخرى.',
+          'Could not add coins. Please try again.',
+        ];
+        setErrorMessage(lang === 'ar' ? arabicMessage : englishMessage);
+        return;
+      }
+
+      setCoinGrantUsername('');
+      setCoinGrantAmount('');
+      await loadCurrentData();
+      setActionNotice(
+        lang === 'ar'
+          ? `تمت إضافة ${result.points_delta} عملة إلى حساب ${result.nickname}. الرصيد الحالي: ${result.points_balance}.`
+          : `Added ${result.points_delta} coins to ${result.nickname}. New balance: ${result.points_balance}.`
+      );
+    } catch {
+      setErrorMessage(
+        lang === 'ar' ? 'تعذر الاتصال بالخادم لإضافة العملات.' : 'Could not reach the server to add coins.'
+      );
+    } finally {
+      setGrantingCoins(false);
+    }
   };
 
   const filteredReports = reports.filter((r) => {
@@ -755,6 +813,68 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
         {/* 4. USERS & ROLES MANAGEMENT */}
         {activeTab === 'users' && (
           <div className="space-y-4">
+            {selfUser.role === 'owner' && (
+              <form
+                onSubmit={handleGrantCoins}
+                className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(150px,220px)_auto] items-end gap-3 rounded-2xl border border-amber-300/50 bg-amber-50 p-4 dark:border-amber-400/20 dark:bg-amber-400/5"
+              >
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-bold">
+                    {lang === 'ar' ? 'اسم المستخدم أو المعرّف الشخصي' : 'Username or profile slug'}
+                  </span>
+                  <input
+                    type="text"
+                    value={coinGrantUsername}
+                    onChange={(event) => setCoinGrantUsername(event.target.value)}
+                    maxLength={64}
+                    required
+                    autoComplete="off"
+                    className="w-full min-h-[44px] rounded-xl border border-slate-200 bg-white px-3 text-sm dark:border-white/10 dark:bg-[#151221]"
+                    placeholder={lang === 'ar' ? 'أدخل اسم الحساب بدقة' : 'Enter the exact account username'}
+                  />
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-bold">{lang === 'ar' ? 'عدد العملات' : 'Coins to add'}</span>
+                  <input
+                    type="number"
+                    value={coinGrantAmount}
+                    onChange={(event) => setCoinGrantAmount(event.target.value)}
+                    min={1}
+                    max={10_000_000}
+                    step={1}
+                    required
+                    inputMode="numeric"
+                    className="w-full min-h-[44px] rounded-xl border border-slate-200 bg-white px-3 text-sm dark:border-white/10 dark:bg-[#151221]"
+                    placeholder="1000"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={
+                    grantingCoins ||
+                    !coinGrantUsername.trim() ||
+                    !Number.isSafeInteger(Number(coinGrantAmount)) ||
+                    Number(coinGrantAmount) < 1 ||
+                    Number(coinGrantAmount) > 10_000_000
+                  }
+                  className="min-h-[44px] rounded-xl bg-amber-500 px-4 text-xs font-bold text-[#241753] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {grantingCoins
+                    ? lang === 'ar'
+                      ? 'جارٍ الإضافة...'
+                      : 'Adding...'
+                    : lang === 'ar'
+                    ? 'إضافة العملات'
+                    : 'Add coins'}
+                </button>
+                <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400 sm:col-span-3">
+                  {lang === 'ar'
+                    ? 'يُطابق الاسم الدقيق أو المعرّف الشخصي الفريد. تُسجّل كل إضافة في سجل العمليات.'
+                    : 'Matches the exact nickname or unique profile slug. Every grant is recorded in the ledger.'}
+                </p>
+              </form>
+            )}
+
             <div className="flex items-center gap-2">
               <div className="flex-1 relative">
                 <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5 pointer-events-none" />
@@ -809,7 +929,14 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-400 font-mono-num mt-0.5">
-                          {u.country} · {u.points} {lang === 'ar' ? 'نقطة' : 'pts'} · {isRealmPremiumActive(u) ? 'VIP' : 'Free'}
+                          {u.country} · {u.points} {lang === 'ar' ? 'نقطة' : 'pts'} ·{' '}
+                          {u.role === 'owner'
+                            ? t.roleOwner
+                            : isRealmPremiumActive(u)
+                            ? 'VIP'
+                            : lang === 'ar'
+                            ? 'حساب مجاني'
+                            : 'Free'}
                         </p>
                       </div>
                     </div>

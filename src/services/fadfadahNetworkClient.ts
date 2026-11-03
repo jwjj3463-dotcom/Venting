@@ -842,6 +842,10 @@ class FadfadahNetworkClient {
             ban_reason: (ev.ban_reason as string) ?? undefined,
             suspension_until: (ev.suspension_until as number) ?? undefined,
             role: (ev.role as RealmUser['role']) ?? self.role,
+            points:
+              Number.isSafeInteger(Number(ev.points)) && Number(ev.points) >= 0
+                ? Number(ev.points)
+                : self.points,
           });
         });
         await triggerLightHaptic();
@@ -887,6 +891,17 @@ class FadfadahNetworkClient {
       };
       await triggerLightHaptic();
       this.notifyManualTopupListeners();
+      this.emitState();
+    } else if (type === 'wallet:admin_credit' && self) {
+      const pointsBalance = Number(ev.points_balance);
+      const transaction = ev.transaction as RealmPaymentTransaction | undefined;
+      await realmDB.write((tx) => {
+        if (Number.isSafeInteger(pointsBalance) && pointsBalance >= 0) {
+          tx.create('users', { ...self, points: pointsBalance });
+        }
+        if (transaction) tx.create('payment_transactions', transaction);
+      });
+      await triggerLightHaptic();
       this.emitState();
     } else if (type === 'wallet:config_updated') {
       for (const listener of this.walletConfigListeners) listener();
@@ -1887,6 +1902,27 @@ class FadfadahNetworkClient {
     if (!res.ok) throw new Error('FORBIDDEN');
     const data = await res.json();
     return data.users || [];
+  }
+
+  async grantAdminCoins(
+    username: string,
+    amount: number
+  ): Promise<{ ok: boolean; error?: string; nickname?: string; points_delta?: number; points_balance?: number }> {
+    const res = await fetch(`${this.getServerBaseUrl()}/api/admin/users/coins`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ username, amount }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      return { ok: false, error: data.error || 'COIN_GRANT_FAILED' };
+    }
+    return {
+      ok: true,
+      nickname: data.nickname,
+      points_delta: data.points_delta,
+      points_balance: data.points_balance,
+    };
   }
 
   async updateAdminUserStatus(

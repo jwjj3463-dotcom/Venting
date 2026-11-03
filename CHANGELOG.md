@@ -4,6 +4,18 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.11.9 — تمييز المالك وإضافة العملات | Owner account and coin grants
+
+### أُضيف
+
+- تمييز مالك المنصة بوضوح في ملفه الشخصي، وضمان حد أدنى قدره مليون نقطة لحساب المالك.
+- تمكين المالك من إضافة نقاط إلى حساب بالاسم المستعار الدقيق أو المعرّف الشخصي الفريد، مع تسجيل كل عملية في السجل المالي.
+
+### Added
+
+- Identify the platform owner distinctly and ensure owner accounts have at least one million points.
+- Allow the owner to credit points to an account by exact nickname or unique profile slug, recording each grant in the financial ledger.
+
 ## 3.11.8 — استكمال تثبيت التحديث دون إعادة تنزيل | Resume update installation without redownloading
 
 ### أُصلح
