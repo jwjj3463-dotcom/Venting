@@ -4,6 +4,18 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.11.6 — إصلاح الدفع وتحسين الشخصيات الذكية | Payment and AI character fixes
+
+### أُصلح
+
+- إصلاح إرسال طلبات الشحن واشتراك VIP مع إثبات التحويل.
+- إعادة محاولة إرسال رسالة الشخصية عند فشل الرد، وتحسين نبرة الشخصيات لتكون طبيعية وأقل رسمية.
+
+### Fixed
+
+- Fix submitting top-up and VIP requests with transfer proof.
+- Make AI character replies more natural and less formal, and retry transient response failures.
+
 ## 3.11.5 — تحسين شاشة الدخول | Sign-in screen polish
 
 ### أُضيف

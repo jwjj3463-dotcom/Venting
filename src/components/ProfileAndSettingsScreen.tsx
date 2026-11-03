@@ -58,6 +58,19 @@ import {
 
 const PROFILE_AVATAR_REQUEST_LIMIT = 700_000;
 
+function getManualPaymentRequestError(error: unknown, lang: AppLang): string {
+  if (error instanceof TypeError) {
+    return lang === 'ar'
+      ? 'تعذر الاتصال بخادم الدفع. تحقق من اتصال الإنترنت وحاول مجددًا.'
+      : 'Could not reach the payment server. Check your internet connection and try again.';
+  }
+  return error instanceof Error
+    ? error.message
+    : lang === 'ar'
+      ? 'تعذر إرسال طلب الدفع.'
+      : 'Could not submit the payment request.';
+}
+
 async function prepareAvatarForRequest(avatarUrl: string): Promise<string> {
   if (!avatarUrl.startsWith('data:image/') || avatarUrl.length <= PROFILE_AVATAR_REQUEST_LIMIT) {
     return avatarUrl;
@@ -431,13 +444,7 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
           : 'VIP subscription request sent; it will activate after transfer review.'
       );
     } catch (error) {
-      setSaveToast(
-        error instanceof Error
-          ? error.message
-          : lang === 'ar'
-            ? 'تعذر إرسال طلب اشتراك VIP.'
-            : 'Could not submit the VIP request.'
-      );
+      setSaveToast(getManualPaymentRequestError(error, lang));
     } finally {
       setSubmittingVip(false);
     }
@@ -448,42 +455,47 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
     if (submittingTopup) return;
     setSubmittingTopup(true);
     setSaveToast('');
-    const result = await fadfadahClient.createManualTopupRequest({
-      packageId: selectedTopupPackage,
-      paymentMethodId: selectedPaymentMethod,
-      transactionReference,
-      proofDataUrl: paymentProof,
-      idempotencyKey: topupIdempotencyKey.current,
-    });
-    setSubmittingTopup(false);
-    if (!result.ok || !result.request) {
-      const error = result.error || '';
-      const message =
-        error === 'TRANSACTION_REFERENCE_ALREADY_USED'
-          ? lang === 'ar'
-            ? 'رقم العملية مستخدم في طلب آخر.'
-            : 'This transaction reference is already used.'
-          : error === 'INVALID_PAYMENT_PROOF'
+    try {
+      const result = await fadfadahClient.createManualTopupRequest({
+        packageId: selectedTopupPackage,
+        paymentMethodId: selectedPaymentMethod,
+        transactionReference,
+        proofDataUrl: paymentProof,
+        idempotencyKey: topupIdempotencyKey.current,
+      });
+      if (!result.ok || !result.request) {
+        const error = result.error || '';
+        const message =
+          error === 'TRANSACTION_REFERENCE_ALREADY_USED'
             ? lang === 'ar'
-              ? 'ملف الإثبات غير صالح أو أكبر من الحد المسموح.'
-              : 'The proof image is invalid or exceeds the size limit.'
-            : error === 'INVALID_PACKAGE_OR_PAYMENT_METHOD'
+              ? 'رقم العملية مستخدم في طلب آخر.'
+              : 'This transaction reference is already used.'
+            : error === 'INVALID_PAYMENT_PROOF'
               ? lang === 'ar'
-                ? 'الباقة أو وسيلة الدفع لم تعد متاحة. حدّث الصفحة وحاول مجددًا.'
-                : 'The selected package or payment method is no longer available. Refresh and retry.'
-              : error || (lang === 'ar' ? 'تعذر إرسال طلب الشحن.' : 'Could not submit the top-up request.');
-      setSaveToast(message);
-      return;
+                ? 'ملف الإثبات غير صالح أو أكبر من الحد المسموح.'
+                : 'The proof image is invalid or exceeds the size limit.'
+              : error === 'INVALID_PACKAGE_OR_PAYMENT_METHOD'
+                ? lang === 'ar'
+                  ? 'الباقة أو وسيلة الدفع لم تعد متاحة. حدّث الصفحة وحاول مجددًا.'
+                  : 'The selected package or payment method is no longer available. Refresh and retry.'
+                : error || (lang === 'ar' ? 'تعذر إرسال طلب الشحن.' : 'Could not submit the top-up request.');
+        setSaveToast(message);
+        return;
+      }
+      setManualTopupRequests((requests) => [result.request!, ...requests]);
+      setTransactionReference('');
+      setPaymentProof('');
+      topupIdempotencyKey.current = generateUUID();
+      setSaveToast(
+        lang === 'ar'
+          ? 'تم إرسال طلب الشحن إلى الإدارة، وسيبقى قيد المراجعة.'
+          : 'Top-up request sent and is pending review.'
+      );
+    } catch (error) {
+      setSaveToast(getManualPaymentRequestError(error, lang));
+    } finally {
+      setSubmittingTopup(false);
     }
-    setManualTopupRequests((requests) => [result.request!, ...requests]);
-    setTransactionReference('');
-    setPaymentProof('');
-    topupIdempotencyKey.current = generateUUID();
-    setSaveToast(
-      lang === 'ar'
-        ? 'تم إرسال طلب الشحن إلى الإدارة، وسيبقى قيد المراجعة.'
-        : 'Top-up request sent and is pending review.'
-    );
   };
 
   const handleSaveServerEndpoint = async (e: React.FormEvent) => {

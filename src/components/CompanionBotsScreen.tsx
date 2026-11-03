@@ -19,10 +19,12 @@ export const CompanionBotsScreen: React.FC<CompanionBotsScreenProps> = ({ lang }
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [errorAction, setErrorAction] = useState<'load' | 'send'>('load');
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   const loadBots = async () => {
     setLoading(true);
+    setErrorAction('load');
     setError('');
     try {
       const response = await fadfadahClient.fetchCompanionBots(lang);
@@ -58,11 +60,12 @@ export const CompanionBotsScreen: React.FC<CompanionBotsScreenProps> = ({ lang }
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [turns.length]);
 
-  const sendMessage = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const sendMessage = async (event?: React.FormEvent) => {
+    event?.preventDefault();
     const content = draft.trim();
     if (!selectedBotId || !content || sending) return;
     setSending(true);
+    setErrorAction('send');
     setError('');
     setDraft('');
     try {
@@ -123,7 +126,11 @@ export const CompanionBotsScreen: React.FC<CompanionBotsScreenProps> = ({ lang }
       {error && (
         <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-200">
           {error}
-          <button type="button" onClick={() => void loadBots()} className="ms-2 font-bold underline">
+          <button
+            type="button"
+            onClick={() => void (errorAction === 'send' ? sendMessage() : loadBots())}
+            className="ms-2 font-bold underline"
+          >
             {isArabic ? 'إعادة المحاولة' : 'Retry'}
           </button>
         </div>
