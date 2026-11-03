@@ -5,7 +5,12 @@ import { formatReleaseNotes } from './releaseNotes';
 interface AndroidApkUpdaterPlugin {
   canInstallPackages(): Promise<{ canInstall: boolean }>;
   openInstallPermissionSettings(): Promise<void>;
-  downloadAndInstall(options: { url: string }): Promise<void>;
+  isDownloadedUpdateReady(options: {
+    version: string;
+    size: number;
+  }): Promise<{ ready: boolean; downloading: boolean }>;
+  installDownloadedUpdate(options: { version: string; size: number }): Promise<void>;
+  downloadAndInstall(options: { url: string; version: string; size: number }): Promise<void>;
   addListener(
     eventName: 'downloadProgress',
     listener: (event: { bytesDownloaded: number; totalBytes: number }) => void
@@ -23,6 +28,8 @@ export interface AndroidAppUpdate {
   notes: string;
   apkUrl: string;
   apkSizeBytes: number;
+  downloaded: boolean;
+  downloadInProgress: boolean;
 }
 
 const ANDROID_APK_UPDATER = registerPlugin<AndroidApkUpdaterPlugin>('AndroidApkUpdater');
@@ -92,6 +99,10 @@ export async function checkForAndroidAppUpdate(): Promise<AndroidAppUpdate | nul
 
   const dismissedTag = window.localStorage.getItem(DISMISSED_RELEASE_KEY);
   if (dismissedTag === release.tag_name) return null;
+  const downloadedState = await ANDROID_APK_UPDATER.isDownloadedUpdateReady({
+    version,
+    size: apk.size,
+  });
 
   return {
     tag: release.tag_name,
@@ -103,6 +114,8 @@ export async function checkForAndroidAppUpdate(): Promise<AndroidAppUpdate | nul
         : '',
     apkUrl: apk.browser_download_url,
     apkSizeBytes: apk.size,
+    downloaded: downloadedState.ready,
+    downloadInProgress: downloadedState.downloading,
   };
 }
 
@@ -119,8 +132,19 @@ export async function openAndroidInstallPermissionSettings(): Promise<void> {
   await ANDROID_APK_UPDATER.openInstallPermissionSettings();
 }
 
-export async function downloadAndInstallAndroidUpdate(url: string): Promise<void> {
-  await ANDROID_APK_UPDATER.downloadAndInstall({ url });
+export async function downloadAndInstallAndroidUpdate(update: AndroidAppUpdate): Promise<void> {
+  await ANDROID_APK_UPDATER.downloadAndInstall({
+    url: update.apkUrl,
+    version: update.version,
+    size: update.apkSizeBytes,
+  });
+}
+
+export async function installDownloadedAndroidUpdate(update: AndroidAppUpdate): Promise<void> {
+  await ANDROID_APK_UPDATER.installDownloadedUpdate({
+    version: update.version,
+    size: update.apkSizeBytes,
+  });
 }
 
 export const androidApkUpdaterEvents = ANDROID_APK_UPDATER;

@@ -4,6 +4,18 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.11.8 — استكمال تثبيت التحديث دون إعادة تنزيل | Resume update installation without redownloading
+
+### أُصلح
+
+- استكمال تثبيت ملف التحديث المكتمل بعد العودة إلى التطبيق، بدل تنزيله مرة أخرى.
+- التحقق من رقم الإصدار وحجم ملف APK قبل إعادة فتح مُثبّت أندرويد.
+
+### Fixed
+
+- Resume installing a completed update after returning to the app instead of downloading it again.
+- Verify the APK version and file size before reopening the Android installer.
+
 ## 3.11.7 — تحسين نافذة تحديث التطبيق | App update prompt copy improvements
 
 ### تحسينات

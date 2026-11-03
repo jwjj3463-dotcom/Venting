@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { Sparkles } from 'lucide-react';
 import {
@@ -8,6 +9,7 @@ import {
   checkForAndroidAppUpdate,
   dismissAndroidAppUpdate,
   downloadAndInstallAndroidUpdate,
+  installDownloadedAndroidUpdate,
   openAndroidInstallPermissionSettings,
 } from '../services/androidAppUpdater';
 
@@ -24,6 +26,9 @@ function getUpdateErrorMessage(error: unknown): string {
   if (/ملف التحديث لا يخص|ليس أحدث من الإصدار|التحقق من النسخة|رابط APK غير موثوق/i.test(details)) {
     return 'تعذّر التحقق من ملف التحديث. أعد المحاولة لاحقًا، وإذا استمرت المشكلة فتواصل مع الدعم.';
   }
+  if (/فتح نافذة تثبيت|فتح مُثبّت/i.test(details)) {
+    return 'تعذّر فتح نافذة التثبيت. لم يُحذف الملف؛ اضغط «متابعة التثبيت» للمحاولة مجددًا.';
+  }
   return 'تعذّر تنزيل التحديث. تحقّق من اتصال الإنترنت، ثم اضغط «تنزيل التحديث» للمحاولة مجددًا.';
 }
 
@@ -31,6 +36,7 @@ export const AndroidAppUpdatePrompt: React.FC = () => {
   const [update, setUpdate] = useState<AndroidAppUpdate | null>(null);
   const [checking, setChecking] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  const [openingInstaller, setOpeningInstaller] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [message, setMessage] = useState('');
 
@@ -41,8 +47,30 @@ export const AndroidAppUpdatePrompt: React.FC = () => {
     }
 
     let active = true;
+    let updateCheckInProgress = false;
     let removeProgress: (() => Promise<void>) | undefined;
     let removeFailure: (() => Promise<void>) | undefined;
+    let removeAppState: (() => Promise<void>) | undefined;
+    let refreshTimeout: number | undefined;
+
+    const refreshUpdate = async (initialCheck = false, preserveMessage = false) => {
+      if (updateCheckInProgress) return;
+      updateCheckInProgress = true;
+      try {
+        const availableUpdate = await checkForAndroidAppUpdate();
+        if (!active) return;
+        setUpdate(availableUpdate);
+        if (!preserveMessage) setMessage('');
+        setOpeningInstaller(false);
+        setDownloading(availableUpdate?.downloadInProgress ?? false);
+        setProgress((current) => (availableUpdate?.downloadInProgress ? current : null));
+      } catch (error) {
+        console.warn('Android update check failed:', error);
+      } finally {
+        updateCheckInProgress = false;
+        if (initialCheck && active) setChecking(false);
+      }
+    };
 
     void androidApkUpdaterEvents
       .addListener('downloadProgress', ({ bytesDownloaded, totalBytes }) => {
@@ -61,6 +89,9 @@ export const AndroidAppUpdatePrompt: React.FC = () => {
         if (!active) return;
         setDownloading(false);
         setMessage(getUpdateErrorMessage(new Error(errorMessage)));
+        refreshTimeout = window.setTimeout(() => {
+          if (active) void refreshUpdate(false, true);
+        }, 500);
       })
       .then((listener) => {
         if (active) removeFailure = listener.remove;
@@ -68,21 +99,23 @@ export const AndroidAppUpdatePrompt: React.FC = () => {
       })
       .catch((error: unknown) => console.error('Android update failure listener failed:', error));
 
-    void checkForAndroidAppUpdate()
-      .then((availableUpdate) => {
-        if (active) setUpdate(availableUpdate);
+    void App.addListener('appStateChange', ({ isActive }) => {
+      if (active && isActive) void refreshUpdate();
+    })
+      .then((listener) => {
+        if (active) removeAppState = listener.remove;
+        else void listener.remove();
       })
-      .catch((error: unknown) => {
-        console.warn('Android update check failed:', error);
-      })
-      .finally(() => {
-        if (active) setChecking(false);
-      });
+      .catch((error: unknown) => console.error('Android update resume listener failed:', error));
+
+    void refreshUpdate(true);
 
     return () => {
       active = false;
       void removeProgress?.();
       void removeFailure?.();
+      void removeAppState?.();
+      if (refreshTimeout !== undefined) window.clearTimeout(refreshTimeout);
     };
   }, []);
 
@@ -96,15 +129,30 @@ export const AndroidAppUpdatePrompt: React.FC = () => {
         setMessage('لإكمال التحديث، فعّل السماح بتثبيت التطبيقات من هذا المصدر في إعدادات أندرويد، ثم ارجع واضغط «تنزيل التحديث».');
         return;
       }
+      if (update.downloaded) {
+        setOpeningInstaller(true);
+        await installDownloadedAndroidUpdate(update);
+        return;
+      }
       setDownloading(true);
       setProgress(0);
-      await downloadAndInstallAndroidUpdate(update.apkUrl);
+      await downloadAndInstallAndroidUpdate(update);
     } catch (error) {
       console.error('Could not start Android app update:', error);
       setDownloading(false);
+      setOpeningInstaller(false);
       setMessage(getUpdateErrorMessage(error));
+      if (update.downloaded) {
+        void checkForAndroidAppUpdate()
+          .then((availableUpdate) => setUpdate(availableUpdate))
+          .catch((refreshError: unknown) =>
+            console.warn('Could not refresh cached Android update status:', refreshError)
+          );
+      }
     }
   };
+
+  const busy = downloading || openingInstaller;
 
   const dismiss = () => {
     dismissAndroidAppUpdate(update.tag);
@@ -129,7 +177,9 @@ export const AndroidAppUpdatePrompt: React.FC = () => {
           </h2>
           <p className="text-sm leading-relaxed text-purple-100/85">
             الإصدار الحالي: {update.currentVersion} · الإصدار الجديد: {update.version} · حجم ملف التحديث: {formatUpdateSize(update.apkSizeBytes)}.
-            {' '}عند اختيار «تنزيل التحديث»، سيبدأ تنزيل الملف، ثم ستظهر نافذة التثبيت الرسمية في نظام أندرويد لإكمال التثبيت.
+            {' '}{update.downloaded
+              ? 'تم تنزيل التحديث مسبقًا. اضغط «متابعة التثبيت» لفتح نافذة التثبيت الرسمية في نظام أندرويد.'
+              : 'عند اختيار «تنزيل التحديث»، سيبدأ تنزيل الملف، ثم ستظهر نافذة التثبيت الرسمية في نظام أندرويد لإكمال التثبيت.'}
           </p>
         </div>
 
@@ -161,7 +211,7 @@ export const AndroidAppUpdatePrompt: React.FC = () => {
         <div className="grid grid-cols-2 gap-3">
           <button
             type="button"
-            disabled={downloading}
+            disabled={busy}
             onClick={dismiss}
             className="min-h-12 rounded-xl border border-white/10 bg-white/5 text-sm font-semibold transition-colors hover:bg-white/10 disabled:opacity-50"
           >
@@ -169,11 +219,17 @@ export const AndroidAppUpdatePrompt: React.FC = () => {
           </button>
           <button
             type="button"
-            disabled={downloading}
+            disabled={busy}
             onClick={() => void startUpdate()}
             className="min-h-12 rounded-xl bg-gradient-to-r from-[#8B5CF6] to-[#6D4BE8] text-sm font-bold shadow-lg shadow-purple-950/30 transition-transform active:scale-[0.98] disabled:opacity-50"
           >
-            {downloading ? 'جارٍ تنزيل التحديث...' : 'تنزيل التحديث'}
+            {downloading
+              ? 'جارٍ تنزيل التحديث...'
+              : openingInstaller
+                ? 'جارٍ فتح مُثبّت أندرويد...'
+                : update.downloaded
+                  ? 'متابعة التثبيت'
+                  : 'تنزيل التحديث'}
           </button>
         </div>
       </section>
