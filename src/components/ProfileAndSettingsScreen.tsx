@@ -1268,9 +1268,17 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
           <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 mt-0.5">
             {selfUser.role === 'owner'
               ? t.roleOwner
+              : selfUser.role === 'moderator'
+              ? t.roleModerator
               : isRealmPremiumActive(selfUser)
               ? t.premiumBadge
-              : t.freeTierBadge}{' '}
+              : t.freeTierBadge}
+            {isRealmPremiumActive(selfUser) && selfUser.role !== 'user' && (
+              <>
+                {' · '}
+                {t.premiumBadge}
+              </>
+            )}{' '}
             ·{' '}
             <span className="font-mono-num">{selfUser.points}</span>{' '}
             {selfUser.role === 'owner'

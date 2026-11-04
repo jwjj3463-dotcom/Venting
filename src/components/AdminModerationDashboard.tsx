@@ -930,8 +930,26 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
                           {u.country} · {u.points} {lang === 'ar' ? 'نقطة' : 'pts'} ·{' '}
                           {u.role === 'owner'
                             ? t.roleOwner
-                            : isRealmPremiumActive(u)
-                            ? 'VIP'
+                            : u.role === 'moderator'
+                            ? t.roleModerator
+                            : t.roleUser}
+                          {' · '}
+                          {isRealmPremiumActive(u)
+                            ? `${t.premiumBadge} · ${
+                                u.premium_plan === 'weekly'
+                                  ? lang === 'ar' ? 'أسبوعي' : 'Weekly'
+                                  : u.premium_plan === 'monthly'
+                                  ? lang === 'ar' ? 'شهري' : 'Monthly'
+                                  : u.premium_plan === 'quarterly'
+                                  ? lang === 'ar' ? 'ربع سنوي' : 'Quarterly'
+                                  : u.premium_plan
+                              }${
+                                u.premium_expires_at
+                                  ? ` · ${new Date(u.premium_expires_at).toLocaleDateString(
+                                      lang === 'ar' ? 'ar-EG' : 'en-US'
+                                    )}`
+                                  : ''
+                              }`
                             : lang === 'ar'
                             ? 'حساب مجاني'
                             : 'Free'}

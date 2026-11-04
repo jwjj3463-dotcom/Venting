@@ -4,6 +4,18 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.12.1 — توضيح حالة عضوية VIP | VIP membership visibility
+
+### أُصلح
+
+- إظهار عضوية VIP النشطة وخطتها وتاريخ انتهائها في قائمة المستخدمين، بما في ذلك حسابات المالك والمشرف.
+- إظهار شارة VIP إلى جانب صفة المالك أو المشرف في الملف الشخصي عند وجود اشتراك نشط.
+
+### Fixed
+
+- Show active VIP membership, plan, and expiration in the user list, including owner and moderator accounts.
+- Show the VIP badge alongside owner or moderator status when their subscription is active.
+
 ## 3.12.0 — AdMob فقط وإزالة Monetag | AdMob-only ads
 
 ### أُصلح
