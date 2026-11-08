@@ -130,6 +130,9 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
   const [country, setCountry] = useState(selfUser.country);
   const [bio, setBio] = useState(selfUser.bio);
   const [age, setAge] = useState(selfUser.age ? String(selfUser.age) : '');
+  const [gender, setGender] = useState<'female' | 'male' | 'other' | ''>(
+    selfUser.gender || ''
+  );
   const [avatarUrl, setAvatarUrl] = useState(selfUser.avatar_url);
   const [frameId, setFrameId] = useState(selfUser.frame_id);
   const [interests, setInterests] = useState<string[]>(selfUser.interests);
@@ -352,6 +355,7 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
         country,
         bio: bio.trim(),
         age: age.trim() ? Number(age) : null,
+        gender: gender || null,
         avatar_url: requestAvatarUrl,
         frame_id: frameId,
         interests,
@@ -1290,6 +1294,28 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
               : 'pts'}
           </p>
 
+          <div className="mt-2 flex items-center justify-center gap-1.5 flex-wrap">
+            <span
+              className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                selfUser.is_trusted_member || isStaff
+                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+                  : 'bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-300'
+              }`}
+            >
+              {selfUser.is_trusted_member || isStaff
+                ? lang === 'ar'
+                  ? '🛡️ عضو موثوق (Trusted Member)'
+                  : lang === 'fr'
+                    ? '🛡️ Membre de confiance'
+                    : '🛡️ Trusted Member'
+                : lang === 'ar'
+                  ? '🌱 حساب جديد (نصوص فقط)'
+                  : lang === 'fr'
+                    ? '🌱 Nouveau compte'
+                    : '🌱 New Member'}
+            </span>
+          </div>
+
         </div>
       </div>
 
@@ -1330,6 +1356,32 @@ export const ProfileAndSettingsScreen: React.FC<ProfileAndSettingsScreenProps> =
               maxLength={24}
               className="w-full h-11 px-3.5 rounded-xl bg-slate-50 dark:bg-[#151221] border border-slate-200 dark:border-white/10 text-sm font-semibold text-slate-900 dark:text-white"
             />
+            <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">
+              {t.loginNameChangeNotice}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+              {lang === 'ar' ? 'الجنس' : 'Gender'}
+            </label>
+            <select
+              value={gender}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (value === 'female' || value === 'male' || value === 'other') {
+                  setGender(value);
+                } else {
+                  setGender('');
+                }
+              }}
+              className="w-full h-11 px-3.5 rounded-xl bg-slate-50 dark:bg-[#151221] border border-slate-200 dark:border-white/10 text-sm text-slate-900 dark:text-white"
+            >
+              <option value="">{lang === 'ar' ? 'اختر' : 'Choose'}</option>
+              <option value="female">{lang === 'ar' ? 'أنثى' : 'Female'}</option>
+              <option value="male">{lang === 'ar' ? 'ذكر' : 'Male'}</option>
+              <option value="other">{lang === 'ar' ? 'أفضل عدم التحديد' : 'Prefer not to say'}</option>
+            </select>
           </div>
 
           <div className="space-y-1.5">

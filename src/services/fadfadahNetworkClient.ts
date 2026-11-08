@@ -21,6 +21,107 @@ export interface LiveMatchCandidate {
   similarityScore: number;
 }
 
+export interface CallSignalDTO {
+  roomId: string;
+  callId: string;
+  signalKind: 'start' | 'offer' | 'answer' | 'ice' | 'end';
+  callType?: 'audio' | 'video';
+  signal?: RTCSessionDescriptionInit | RTCIceCandidateInit | null;
+  fromUserId: string;
+}
+
+export interface ChatGameDTO {
+  id: string;
+  roomId: string;
+  createdAt: number;
+  gameType:
+    | 'tic-tac-toe'
+    | 'rock-paper-scissors'
+    | 'connect-four'
+    | 'guess-number'
+    | 'bulls-cows'
+    | 'pig-dice'
+    | 'nim';
+  inviterId: string;
+  opponentId: string;
+  status: 'invited' | 'active' | 'finished';
+  computerMode?: boolean;
+  board: Array<'X' | 'O' | null>;
+  turnUserId: string;
+  winner: 'X' | 'O' | 'DRAW' | null;
+  round?: number;
+  roundWinners?: Array<'X' | 'O' | 'DRAW'>;
+  pendingMove?: 'rock' | 'paper' | 'scissors' | null;
+  secretReady?: boolean;
+  lastGuess?: number;
+  guessHint?: 'higher' | 'lower' | 'correct';
+  lastCodeGuess?: string;
+  bulls?: number;
+  cows?: number;
+  scores?: Record<string, number>;
+  turnPoints?: number;
+  lastDieRoll?: number;
+  nimHeaps?: number[];
+}
+
+export interface ChatGameEventDTO {
+  type: 'game:state' | 'game:end';
+  game: ChatGameDTO;
+  reason?: 'declined' | 'ended' | 'disconnected' | 'expired';
+}
+
+export interface GroupRoomDTO {
+  id: string;
+  name_ar: string;
+  name_en: string;
+  description_ar: string;
+  description_en: string;
+  category: 'PUBLIC' | 'PRIVATE' | 'HOSTED';
+  invite_code: string | null;
+  created_by: string;
+  host_id: string;
+  member_count: number;
+  is_member: boolean;
+  is_host: boolean;
+  created_at: number;
+  updated_at: number;
+  is_active: boolean;
+  members?: Array<{ id: string; nickname: string }>;
+}
+
+export interface GroupRoomMessageDTO {
+  id: string;
+  room_id: string;
+  sender_id: string;
+  content: string;
+  created_at: number;
+  is_frozen: boolean;
+  ai_flag_score: number;
+  ai_flag_reason: string;
+  mentioned_user_ids?: string[];
+}
+
+export interface GroupMentionNotice {
+  roomId: string;
+  senderNickname: string;
+  roomNameAr: string;
+  roomNameEn: string;
+}
+
+export interface BanAppealDTO {
+  id: string;
+  user_id: string;
+  user_nickname: string;
+  ban_reason: string;
+  message: string;
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+  created_at: number;
+  reviewed_at?: number;
+  reviewed_by?: string;
+  reviewed_by_name?: string;
+  review_note?: string;
+}
+
 export interface AdminStatsDTO {
   totalUsers: number;
   onlineUsers: number;
@@ -196,10 +297,13 @@ class FadfadahNetworkClient {
   private manualClose = false;
   private latestWalletNotice: WalletNotice | null = null;
   private latestInterestNotice: InterestNotice | null = null;
+  private latestGroupMentionNotice: GroupMentionNotice | null = null;
   private latestSafeChatScreenshot: { roomId: string; nickname: string; createdAt: number } | null = null;
   private walletConfigListeners = new Set<() => void>();
   private manualTopupListeners = new Set<() => void>();
   private interestRequestListeners = new Set<() => void>();
+  private callSignalListeners = new Set<(signal: CallSignalDTO) => void>();
+  private gameEventListeners = new Set<(event: ChatGameEventDTO) => void>();
 
   getServerBaseUrl(): string {
     const customUrl = realmDB.getSettings().custom_server_url?.trim();
@@ -233,6 +337,12 @@ class FadfadahNetworkClient {
   takeInterestNotice(): InterestNotice | null {
     const notice = this.latestInterestNotice;
     this.latestInterestNotice = null;
+    return notice;
+  }
+
+  takeGroupMentionNotice(): GroupMentionNotice | null {
+    const notice = this.latestGroupMentionNotice;
+    this.latestGroupMentionNotice = null;
     return notice;
   }
 
@@ -279,6 +389,101 @@ class FadfadahNetworkClient {
   subscribeInterestRequestUpdates(cb: () => void): () => void {
     this.interestRequestListeners.add(cb);
     return () => this.interestRequestListeners.delete(cb);
+  }
+
+  subscribeCallSignals(cb: (signal: CallSignalDTO) => void): () => void {
+    this.callSignalListeners.add(cb);
+    return () => this.callSignalListeners.delete(cb);
+  }
+
+  subscribeChatGames(cb: (event: ChatGameEventDTO) => void): () => void {
+    this.gameEventListeners.add(cb);
+    return () => this.gameEventListeners.delete(cb);
+  }
+
+  inviteToChatGame(roomId: string, gameId: string, gameType: ChatGameDTO['gameType']): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(JSON.stringify({ type: 'game:invite', roomId, gameId, gameType }));
+    return true;
+  }
+
+  respondToChatGame(gameId: string, accept: boolean): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(JSON.stringify({ type: 'game:respond', gameId, accept }));
+    return true;
+  }
+
+  makeChatGameMove(
+    gameId: string,
+    move:
+      | number
+      | { choice: 'rock' | 'paper' | 'scissors' }
+      | { guess: number }
+      | { codeGuess: string }
+      | { action: 'roll' | 'hold' }
+      | { heapIndex: number; count: number }
+  ): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(
+      JSON.stringify({
+        type: 'game:move',
+        gameId,
+        ...(typeof move === 'number' ? { index: move } : move),
+      })
+    );
+    return true;
+  }
+
+  setChatGameSecret(gameId: string, secret: number | string): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(JSON.stringify({
+      type: 'game:set_secret',
+      gameId,
+      ...(typeof secret === 'number' ? { secretNumber: secret } : { secretCode: secret }),
+    }));
+    return true;
+  }
+
+  endChatGame(gameId: string): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(JSON.stringify({ type: 'game:end', gameId }));
+    return true;
+  }
+
+  async getCallIceServers(roomId: string): Promise<RTCIceServer[]> {
+    const response = await fetch(
+      `${this.getServerBaseUrl()}/api/rooms/${encodeURIComponent(roomId)}/call-ice-servers`,
+      { method: 'GET', headers: this.getAuthHeaders(), cache: 'no-store' }
+    );
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        data.error === 'CALL_TURN_NOT_CONFIGURED'
+          ? 'CALL_TURN_NOT_CONFIGURED'
+          : data.error || 'Could not load call connection settings.'
+      );
+    }
+    if (!Array.isArray(data.iceServers) || data.iceServers.length === 0) {
+      throw new Error('Invalid call connection settings.');
+    }
+    return data.iceServers as RTCIceServer[];
+  }
+
+  startCallSignal(roomId: string, callId: string, callType: 'audio' | 'video'): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(JSON.stringify({ type: 'call:start', roomId, callId, callType }));
+    return true;
+  }
+
+  sendCallSignal(
+    roomId: string,
+    callId: string,
+    signalKind: 'offer' | 'answer' | 'ice' | 'end',
+    signal?: RTCSessionDescriptionInit | RTCIceCandidateInit | null
+  ): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(JSON.stringify({ type: 'call:signal', roomId, callId, signalKind, signal }));
+    return true;
   }
 
   private notifyInterestRequestListeners(): void {
@@ -361,8 +566,12 @@ class FadfadahNetworkClient {
       let detail = '';
       try {
         const body: unknown = await res.json();
-        if (isRecord(body) && typeof body.error === 'string') {
-          detail = `: ${body.error}`;
+        if (isRecord(body)) {
+          const code = typeof body.error === 'string' ? body.error : '';
+          const message = typeof body.message === 'string' ? body.message : '';
+          if (message || code) {
+            detail = `: ${message}${message && code ? ` (${code})` : code}`;
+          }
         }
       } catch {
         // The HTTP status remains useful when the server does not return JSON.
@@ -377,14 +586,21 @@ class FadfadahNetworkClient {
     }
   }
 
-  async createFreshDeviceAccount(): Promise<string> {
+  async createFreshDeviceAccount(profile: {
+    nickname: string;
+    password: string;
+    avatar_url: string;
+    age: number;
+    gender: 'female' | 'male' | 'other';
+    turnstileToken: string;
+  }): Promise<string> {
     const base = this.getServerBaseUrl();
     const res = await this.fetchBootstrap(
       `${base}/api/auth/register`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify(profile),
       },
       'تعذر تسجيل الحساب'
     );
@@ -429,6 +645,24 @@ class FadfadahNetworkClient {
     }
     this.connectWebSocket();
     return registration.recoveryCode;
+  }
+
+  async loginWithPassword(username: string, password: string): Promise<void> {
+    const base = this.getServerBaseUrl();
+    const res = await this.fetchBootstrap(
+      `${base}/api/auth/login`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), password }),
+      },
+      'تعذر تسجيل الدخول'
+    );
+    const response: unknown = await this.readBootstrapResponse<unknown>(
+      res,
+      'تعذر تسجيل الدخول'
+    );
+    await this.acceptFirebaseSession(response, false);
   }
 
   async recoverAccount(recoveryCode: string): Promise<string> {
@@ -799,6 +1033,27 @@ class FadfadahNetworkClient {
     const type = String(ev.type || '');
     const self = realmDB.findSelfUser();
 
+    if (type === 'call:signal') {
+      if (
+        typeof ev.roomId === 'string' &&
+        typeof ev.callId === 'string' &&
+        typeof ev.fromUserId === 'string' &&
+        ['start', 'offer', 'answer', 'ice', 'end'].includes(String(ev.signalKind))
+      ) {
+        const signal = ev as unknown as CallSignalDTO;
+        for (const listener of this.callSignalListeners) listener(signal);
+      }
+      return;
+    }
+
+    if (type === 'game:state' || type === 'game:end') {
+      if (isRecord(ev.game) && typeof ev.game.id === 'string' && typeof ev.game.roomId === 'string') {
+        const event = ev as unknown as ChatGameEventDTO;
+        for (const listener of this.gameEventListeners) listener(event);
+      }
+      return;
+    }
+
     if (type === 'presence:online_users') {
       const users = (ev.users as Array<RealmUser>) || [];
       this.onlineCount = Math.max(1, users.length);
@@ -933,6 +1188,14 @@ class FadfadahNetworkClient {
         this.latestInterestNotice = { kind: 'DECISION' };
       }
       this.notifyInterestRequestListeners();
+      this.emitState();
+    } else if (type === 'group-message:mention') {
+      this.latestGroupMentionNotice = {
+        roomId: String(ev.roomId || ''),
+        senderNickname: String(ev.senderNickname || ''),
+        roomNameAr: String(ev.roomNameAr || ''),
+        roomNameEn: String(ev.roomNameEn || ''),
+      };
       this.emitState();
     } else if (type === 'safe-chat:updated' || type === 'safe-chat:expired') {
       const room = ev.room as RealmChatRoom | undefined;
@@ -1150,6 +1413,8 @@ class FadfadahNetworkClient {
       }
     } else if (type === 'sync:needed') {
       await this.pullFullSync();
+    } else if (type === 'group-room:updated' || type === 'group-message:new') {
+      this.emitState();
     }
   }
 
@@ -1227,6 +1492,7 @@ class FadfadahNetworkClient {
     country: string;
     bio: string;
     age: number | null;
+    gender: 'female' | 'male' | 'other' | null;
     avatar_url: string;
     frame_id: number;
     interests: string[];
@@ -1626,6 +1892,104 @@ class FadfadahNetworkClient {
     }
   }
 
+  private async requestGroupRooms<T>(
+    path: string,
+    init: RequestInit = {},
+    endpoint = 'تعذر تحميل الغرف الجماعية'
+  ): Promise<T> {
+    const response = await this.fetchBootstrap(
+      `${this.getServerBaseUrl()}${path}`,
+      {
+        ...init,
+        headers: this.getAuthHeaders(),
+      },
+      endpoint
+    );
+    return this.readBootstrapResponse<T>(response, endpoint);
+  }
+
+  async getGroupRooms(): Promise<GroupRoomDTO[]> {
+    const result = await this.requestGroupRooms<{ rooms: GroupRoomDTO[] }>(
+      '/api/group-rooms'
+    );
+    if (!Array.isArray(result.rooms)) throw new Error('استجابة دليل الغرف غير صالحة.');
+    return result.rooms;
+  }
+
+  async getGroupRoomMessages(roomId: string): Promise<GroupRoomMessageDTO[]> {
+    const result = await this.requestGroupRooms<{ messages: GroupRoomMessageDTO[] }>(
+      `/api/group-rooms/${encodeURIComponent(roomId)}/messages`
+    );
+    if (!Array.isArray(result.messages)) throw new Error('استجابة رسائل الغرفة غير صالحة.');
+    return result.messages;
+  }
+
+  async createGroupRoom(payload: {
+    name_ar: string;
+    name_en: string;
+    description_ar: string;
+    description_en: string;
+    category: GroupRoomDTO['category'];
+    password?: string;
+  }): Promise<GroupRoomDTO> {
+    const result = await this.requestGroupRooms<{ room: GroupRoomDTO }>(
+      '/api/group-rooms',
+      { method: 'POST', body: JSON.stringify(payload) },
+      'تعذر إنشاء الغرفة'
+    );
+    if (!result.room?.id) throw new Error('استجابة إنشاء الغرفة غير مكتملة.');
+    this.emitState();
+    return result.room;
+  }
+
+  async joinGroupRoom(roomId: string, password?: string): Promise<GroupRoomDTO> {
+    const result = await this.requestGroupRooms<{ room: GroupRoomDTO }>(
+      `/api/group-rooms/${encodeURIComponent(roomId)}/join`,
+      { method: 'POST', body: JSON.stringify({ password }) },
+      'تعذر الانضمام إلى الغرفة'
+    );
+    if (!result.room?.id) throw new Error('استجابة الانضمام إلى الغرفة غير مكتملة.');
+    this.emitState();
+    return result.room;
+  }
+
+  async joinPrivateGroupRoomByCode(
+    code: string,
+    password: string
+  ): Promise<GroupRoomDTO> {
+    const result = await this.requestGroupRooms<{ room: GroupRoomDTO }>(
+      '/api/group-rooms/join-by-code',
+      { method: 'POST', body: JSON.stringify({ code, password }) },
+      'تعذر دخول الغرفة الخاصة'
+    );
+    if (!result.room?.id) throw new Error('استجابة دخول الغرفة غير مكتملة.');
+    this.emitState();
+    return result.room;
+  }
+
+  async leaveGroupRoom(roomId: string): Promise<void> {
+    await this.requestGroupRooms<{ ok: boolean }>(
+      `/api/group-rooms/${encodeURIComponent(roomId)}/leave`,
+      { method: 'POST' },
+      'تعذر مغادرة الغرفة'
+    );
+    this.emitState();
+  }
+
+  async sendGroupRoomMessage(
+    roomId: string,
+    content: string,
+    mentionedUserIds: string[] = []
+  ): Promise<GroupRoomMessageDTO> {
+    const result = await this.requestGroupRooms<{ message: GroupRoomMessageDTO }>(
+      `/api/group-rooms/${encodeURIComponent(roomId)}/messages`,
+      { method: 'POST', body: JSON.stringify({ content, mentioned_user_ids: mentionedUserIds }) },
+      'تعذر إرسال الرسالة'
+    );
+    if (!result.message?.id) throw new Error('استجابة إرسال الرسالة غير مكتملة.');
+    return result.message;
+  }
+
   async markRoomRead(roomId: string): Promise<void> {
     const room = realmDB.objectForPrimaryKey('chat_rooms', roomId);
     if (room && room.unread_count > 0) {
@@ -1677,13 +2041,48 @@ class FadfadahNetworkClient {
       body: JSON.stringify(params),
     });
     const data = await res.json();
+    if (!res.ok) {
+      return {
+        ok: false,
+        summary:
+          (typeof data.message === 'string' && data.message) ||
+          (typeof data.error === 'string' && data.error) ||
+          'تعذر إرسال البلاغ.',
+      };
+    }
+
     if (data.report) {
       await realmDB.write((tx) => {
         tx.create('reports_moderation', data.report);
       });
       return { ok: true, summary: data.report.ai_summary };
     }
-    return { ok: false, summary: 'تم حفظ البلاغ في سجل الإشراف.' };
+    return { ok: false, summary: 'لم يؤكد الخادم تسجيل البلاغ.' };
+  }
+
+  async getMyBanAppeal(): Promise<BanAppealDTO | null> {
+    const response = await fetch(`${this.getServerBaseUrl()}/api/account/ban-appeal`, {
+      method: 'GET',
+      headers: this.getAuthHeaders(),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'تعذر تحميل حالة طلب الاستئناف.');
+    }
+    return (data.appeal as BanAppealDTO | null) ?? null;
+  }
+
+  async submitBanAppeal(message: string): Promise<BanAppealDTO> {
+    const response = await fetch(`${this.getServerBaseUrl()}/api/account/ban-appeal`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ message }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'تعذر إرسال طلب الاستئناف.');
+    }
+    return data.appeal as BanAppealDTO;
   }
 
   async publishVent(topic: string, content: string): Promise<{ ok: boolean; error?: string }> {
@@ -1842,6 +2241,41 @@ class FadfadahNetworkClient {
     if (!res.ok) throw new Error('FORBIDDEN');
     const data = await res.json();
     return (data.reports as RealmReportModeration[]) || [];
+  }
+
+  async getAdminBanAppeals(): Promise<BanAppealDTO[]> {
+    const response = await fetch(`${this.getServerBaseUrl()}/api/admin/ban-appeals`, {
+      method: 'GET',
+      headers: this.getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error('FORBIDDEN');
+    const data = await response.json();
+    return (data.appeals as BanAppealDTO[]) || [];
+  }
+
+  async reviewAdminBanAppeal(
+    appealId: string,
+    decision: 'ACCEPT' | 'REJECT',
+    note: string
+  ): Promise<{ ok: boolean; appeal?: BanAppealDTO; error?: string }> {
+    const response = await fetch(
+      `${this.getServerBaseUrl()}/api/admin/ban-appeals/${encodeURIComponent(appealId)}/review`,
+      {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({ decision, note }),
+      }
+    );
+    const data = await response.json();
+    if (!response.ok) {
+      return { ok: false, error: data.error || 'تعذرت مراجعة طلب الاستئناف.' };
+    }
+    if (data.selfUser) {
+      await realmDB.write((tx) => {
+        tx.create('users', { ...data.selfUser, is_self: true });
+      });
+    }
+    return { ok: true, appeal: data.appeal as BanAppealDTO };
   }
 
   async takeModerationAction(

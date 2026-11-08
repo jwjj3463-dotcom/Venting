@@ -35,10 +35,14 @@ jobs:
       - name: Build web app
         env:
           VITE_API_SERVER_URL: https://fadfada.94.237.56.203.nip.io
+          VITE_CLOUDFLARE_TURNSTILE_SITE_KEY: ${{ vars.CLOUDFLARE_TURNSTILE_SITE_KEY }}
         run: npm run build
 
       - name: Create Android project
         run: npx cap add android
+
+      - name: Configure WebRTC Android permissions
+        run: node scripts/configure-android-webrtc.mjs
 
       - name: Configure Firebase Authentication
         run: node scripts/configure-android-firebase.mjs

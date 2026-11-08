@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { App as CapApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import {
@@ -14,6 +14,7 @@ import {
   Settings,
   ShieldAlert,
   AlertTriangle,
+  Users,
 } from 'lucide-react';
 import {
   realmDB,
@@ -41,11 +42,18 @@ import { AnonymousWebGatewayModal } from './components/AnonymousWebGatewayModal'
 import { AdInterstitialModal } from './components/AdInterstitialModal';
 import { AndroidAppUpdatePrompt } from './components/AndroidAppUpdatePrompt';
 import { AccountAccessScreen } from './components/AccountAccessScreen';
+import { BanAppealScreen } from './components/BanAppealScreen';
 import { StartupSplashScreen } from './components/StartupSplashScreen';
 import { adService } from './services/adService';
 import { TRANSLATIONS } from './i18n/translations';
 
-type PrimaryTab = 'chats' | 'match' | 'explore' | 'profile';
+type PrimaryTab = 'chats' | 'match' | 'rooms' | 'explore' | 'profile';
+
+const GroupRoomsScreen = lazy(() =>
+  import('./components/GroupRoomsScreen').then((module) => ({
+    default: module.GroupRoomsScreen,
+  }))
+);
 
 const APP_LINK_HOST = new URL(
   (import.meta.env.VITE_API_SERVER_URL as string | undefined) ||
@@ -184,6 +192,29 @@ export default function App() {
               screen: 'interest-requests',
             }).catch((error: unknown) => {
               console.error('Could not present an introduction notification:', error);
+            });
+          }
+          const groupMentionNotice = fadfadahClient.takeGroupMentionNotice();
+          if (groupMentionNotice) {
+            const language = realmDB.getSettings().language;
+            const roomName =
+              language === 'ar'
+                ? groupMentionNotice.roomNameAr
+                : groupMentionNotice.roomNameEn;
+            void showLocalNotification(
+              language === 'ar'
+                ? 'تم ذكرك في غرفة'
+                : language === 'fr'
+                  ? 'Vous avez été mentionné dans un salon'
+                  : 'You were mentioned in a room',
+              language === 'ar'
+                ? `ذكرك ${groupMentionNotice.senderNickname} في ${roomName}.`
+                : language === 'fr'
+                  ? `${groupMentionNotice.senderNickname} vous a mentionné dans ${roomName}.`
+                  : `${groupMentionNotice.senderNickname} mentioned you in ${roomName}.`,
+              { screen: 'group-rooms', roomId: groupMentionNotice.roomId }
+            ).catch((error: unknown) => {
+              console.error('Could not present a group mention notification:', error);
             });
           }
           if (!realmDB.getSettings().auth_token) {
@@ -466,8 +497,11 @@ export default function App() {
         onGoogleAuth={(idToken) =>
           void handleFirebaseAction(() => handleGoogleAccountAccess(idToken))
         }
-        onCreateAccount={() =>
-          void handleAccountAccess(() => fadfadahClient.createFreshDeviceAccount())
+        onGuestLogin={(username, password) =>
+          void handleFirebaseAction(() => fadfadahClient.loginWithPassword(username, password))
+        }
+        onCreateAccount={(profile) =>
+          void handleAccountAccess(() => fadfadahClient.createFreshDeviceAccount(profile))
         }
         onRecoverAccount={(code) =>
           void handleAccountAccess(() => fadfadahClient.recoverAccount(code))
@@ -485,6 +519,7 @@ export default function App() {
         onFirebaseLogin={() => {}}
         onFirebaseRegister={() => {}}
         onGoogleAuth={() => {}}
+        onGuestLogin={() => {}}
         onLinkFirebase={handleFirebaseLink}
         onCancelLink={() => setFirebaseLinkRequired(false)}
         onCreateAccount={() => {}}
@@ -515,20 +550,31 @@ export default function App() {
             <ShieldAlert className="w-8 h-8" />
           </div>
           <h2 className="text-lg font-bold text-rose-600">
-            {settings.language === 'ar' ? 'تم حظر هذا الحساب نهائياً' : 'Account Permanently Banned'}
+            {settings.language === 'ar'
+              ? 'تم حظر هذا الحساب نهائياً'
+              : settings.language === 'fr'
+                ? 'Compte définitivement banni'
+                : 'Account Permanently Banned'}
           </h2>
           <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
             {selfUser.ban_reason ||
               (settings.language === 'ar'
                 ? 'تم حظر حسابك بقرار من طاقم الإشراف لمخالفة معايير الأمان وشروط الاستخدام.'
-                : 'Your account was banned for violating safety and community guidelines.')}
+                : settings.language === 'fr'
+                  ? 'Votre compte a été banni pour non-respect des règles de sécurité et de la communauté.'
+                  : 'Your account was banned for violating safety and community guidelines.')}
           </p>
+          <BanAppealScreen lang={settings.language} />
           <button
             type="button"
             onClick={() => fadfadahClient.deleteAccountPermanently()}
             className="min-h-[44px] px-5 rounded-xl bg-slate-200 dark:bg-white/10 text-xs font-semibold text-slate-800 dark:text-slate-200"
           >
-            {settings.language === 'ar' ? 'مسح وإنشاء هوية جديدة' : 'Reset Account'}
+            {settings.language === 'ar'
+              ? 'مسح وإنشاء هوية جديدة'
+              : settings.language === 'fr'
+                ? 'Réinitialiser le compte'
+                : 'Reset Account'}
           </button>
         </div>
       </div>
@@ -548,13 +594,19 @@ export default function App() {
             <ShieldAlert className="w-8 h-8" />
           </div>
           <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-            {settings.language === 'ar' ? 'تم تعليق حسابك مؤقتاً' : 'Account Temporarily Suspended'}
+            {settings.language === 'ar'
+              ? 'تم تعليق حسابك مؤقتاً'
+              : settings.language === 'fr'
+                ? 'Compte temporairement suspendu'
+                : 'Account Temporarily Suspended'}
           </h2>
           <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
             {selfUser.ban_reason ||
               (settings.language === 'ar'
                 ? `الحساب موقوف مؤقتاً لمراجعة مخالفة إشرافية. متبقي: ${hoursLeft} ساعة.`
-                : `Account suspended pending review. Remaining: ${hoursLeft} hours.`)}
+                : settings.language === 'fr'
+                  ? `Compte suspendu en attente d’examen. Temps restant : ${hoursLeft} h.`
+                  : `Account suspended pending review. Remaining: ${hoursLeft} hours.`)}
           </p>
           <p className="text-[11px] text-slate-400 font-mono-num">
             {new Date(selfUser.suspension_until).toLocaleString()}
@@ -615,10 +667,12 @@ export default function App() {
   };
 
   const handleToggleLanguage = async () => {
+    const nextLanguage =
+      settings.language === 'ar' ? 'en' : settings.language === 'en' ? 'fr' : 'ar';
     await realmDB.write((tx) => {
       tx.create('app_settings', {
         ...settings,
-        language: settings.language === 'ar' ? 'en' : 'ar',
+        language: nextLanguage,
       });
     });
   };
@@ -642,10 +696,14 @@ export default function App() {
   };
 
   return (
-    <div className="h-[100dvh] w-full overflow-hidden flex flex-col lg:grid lg:grid-cols-12 bg-[#F8F9FA] dark:bg-[#151221] text-[#1F2937] dark:text-[#F3F4F6]">
+    <div
+      lang={lang}
+      dir={lang === 'ar' ? 'rtl' : 'ltr'}
+      className="h-[100dvh] w-full overflow-hidden flex flex-col lg:grid lg:grid-cols-12 bg-[#F8F9FA] dark:bg-[#151221] text-[#1F2937] dark:text-[#F3F4F6]"
+    >
       {/* Native Android Primary Pane (Full screen on Android phone; Left pane on Android Tablet / Wide Screen) */}
       <section
-        className={`lg:col-span-5 xl:col-span-4 h-full flex flex-col lg:border-e border-slate-200 dark:border-white/10 overflow-hidden ${
+        className={`${activeTab === 'rooms' ? 'lg:col-span-12 xl:col-span-12' : 'lg:col-span-5 xl:col-span-4'} h-full flex flex-col lg:border-e border-slate-200 dark:border-white/10 overflow-hidden ${
           selectedRoom && activeTab === 'chats' ? 'hidden lg:flex' : 'flex'
         }`}
       >
@@ -665,6 +723,8 @@ export default function App() {
               ? t.appName
               : activeTab === 'match'
               ? t.randomMatchTitle
+              : activeTab === 'rooms'
+              ? lang === 'ar' ? 'الغرف' : lang === 'fr' ? 'Salons' : 'Rooms'
               : activeTab === 'explore'
               ? t.exploreTitle
               : t.profileTitle}
@@ -809,6 +869,31 @@ export default function App() {
             />
           )}
 
+          {activeTab === 'rooms' && (
+            <Suspense
+              fallback={
+                <div className="p-8 text-center text-xs text-slate-500 dark:text-slate-400">
+                  {lang === 'ar'
+                    ? 'جارٍ فتح دليل الغرف...'
+                    : lang === 'fr'
+                      ? 'Ouverture des salons…'
+                      : 'Opening rooms...'}
+                </div>
+              }
+            >
+              <GroupRoomsScreen
+                selfUser={selfUser}
+                allUsers={allUsers}
+                lang={lang}
+                onOpenProfile={() => {
+                  setProfileSubSection('main');
+                  setActiveTab('profile');
+                }}
+                onOpenRandomMatch={() => setActiveTab('match')}
+              />
+            </Suspense>
+          )}
+
           {activeTab === 'match' && (
             <RandomMatchScreen
               selfUser={selfUser}
@@ -848,11 +933,12 @@ export default function App() {
         </div>
 
         {/* Native Android Bottom Navigation Bar */}
-        <nav className="pb-safe min-h-[64px] bg-white dark:bg-[#1E1B2E] border-t border-slate-200 dark:border-white/10 grid grid-cols-4 items-center shrink-0">
+        <nav className="pb-safe min-h-[64px] bg-white dark:bg-[#1E1B2E] border-t border-slate-200 dark:border-white/10 grid grid-cols-5 items-center shrink-0">
           {(
             [
               { id: 'chats', label: t.navChats, icon: MessageSquare, badge: totalUnreadCount },
               { id: 'match', label: t.navMatch, icon: Radar, badge: 0 },
+              { id: 'rooms', label: lang === 'ar' ? 'الغرف' : lang === 'fr' ? 'Salons' : 'Rooms', icon: Users, badge: 0 },
               { id: 'explore', label: t.navExplore, icon: Compass, badge: 0 },
               { id: 'profile', label: t.navProfile, icon: UserIcon, badge: 0 },
             ] as const
@@ -893,7 +979,11 @@ export default function App() {
       {/* Native Android Conversation Pane (Full screen slide-in on Phone; Right Split Pane on Tablet/Wide) */}
       <section
         className={`lg:col-span-7 xl:col-span-8 h-full flex flex-col bg-[#F8F9FA] dark:bg-[#151221] overflow-hidden ${
-          selectedRoom && activeTab === 'chats' ? 'flex' : 'hidden lg:flex'
+          activeTab === 'rooms'
+            ? 'hidden'
+            : selectedRoom && activeTab === 'chats'
+              ? 'flex'
+              : 'hidden lg:flex'
         }`}
       >
         {selectedRoom && selectedRoomPeer ? (
@@ -912,12 +1002,18 @@ export default function App() {
             </div>
             <div className="space-y-1.5 max-w-sm">
               <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                {lang === 'ar' ? 'فضفضة — تواصل حقيقي وآمن' : 'Fadfadah — Real Anonymous Chat'}
+                {lang === 'ar'
+                  ? 'فضفضة — تواصل حقيقي وآمن'
+                  : lang === 'fr'
+                    ? 'Fadfada — des échanges anonymes et sûrs'
+                    : 'Fadfadah — Real Anonymous Chat'}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                 {lang === 'ar'
                   ? 'شارك رابطك الشخصي لاستقبال رسائل حقيقية، أو افتح رادار المطابقة للتواصل المباشر مع المتصلين الآن.'
-                  : 'Share your personal link to receive real secret messages, or open the Match Radar to connect live.'}
+                  : lang === 'fr'
+                    ? 'Partagez votre lien personnel pour recevoir des messages anonymes, ou ouvrez le radar pour discuter en direct.'
+                    : 'Share your personal link to receive real secret messages, or open the Match Radar to connect live.'}
               </p>
             </div>
             <button

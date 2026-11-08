@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import {
   AdminStatsDTO,
+  BanAppealDTO,
   fadfadahClient,
   ManualTopupConfigDTO,
   ManualTopupRequestDTO,
@@ -52,7 +53,7 @@ interface AdminModerationDashboardProps {
   onBack: () => void;
 }
 
-type AdminTab = 'overview' | 'reports' | 'audit_logs' | 'users' | 'ledger' | 'manual_topups' | 'ads';
+type AdminTab = 'overview' | 'reports' | 'appeals' | 'audit_logs' | 'users' | 'ledger' | 'manual_topups' | 'ads';
 
 export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> = ({
   selfUser,
@@ -70,6 +71,9 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
 
   // Reports
   const [reports, setReports] = useState<RealmReportModeration[]>([]);
+  const [banAppeals, setBanAppeals] = useState<BanAppealDTO[]>([]);
+  const [appealNotes, setAppealNotes] = useState<Record<string, string>>({});
+  const [reviewingAppealId, setReviewingAppealId] = useState('');
   const [reportFilter, setReportFilter] = useState<'ALL' | 'PENDING' | 'ACTION_TAKEN' | 'DISMISSED'>('PENDING');
   const [selectedReport, setSelectedReport] = useState<RealmReportModeration | null>(null);
   const [actionReason, setActionReason] = useState('');
@@ -117,6 +121,8 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
           const fresh = reps.find((r) => r.id === selectedReport.id);
           if (fresh) setSelectedReport(fresh);
         }
+      } else if (activeTab === 'appeals') {
+        setBanAppeals(await fadfadahClient.getAdminBanAppeals());
       } else if (activeTab === 'audit_logs') {
         const logs = await fadfadahClient.getAdminAuditLogs();
         setAuditLogs(logs);
@@ -299,6 +305,35 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
     await loadCurrentData();
   };
 
+  const handleReviewBanAppeal = async (
+    appeal: BanAppealDTO,
+    decision: 'ACCEPT' | 'REJECT'
+  ) => {
+    const note = appealNotes[appeal.id]?.trim() || '';
+    if (note.length < 2) {
+      setErrorMessage(lang === 'ar' ? 'اكتب ملاحظة القرار قبل المراجعة.' : 'Enter a review note before deciding.');
+      return;
+    }
+    setReviewingAppealId(appeal.id);
+    setErrorMessage('');
+    const result = await fadfadahClient.reviewAdminBanAppeal(appeal.id, decision, note);
+    setReviewingAppealId('');
+    if (!result.ok) {
+      setErrorMessage(result.error || (lang === 'ar' ? 'تعذرت مراجعة الاستئناف.' : 'Could not review the appeal.'));
+      return;
+    }
+    setActionNotice(
+      decision === 'ACCEPT'
+        ? lang === 'ar'
+          ? 'تم قبول الاستئناف ورفع الحظر وتوثيق القرار.'
+          : 'Appeal accepted, ban lifted, and decision logged.'
+        : lang === 'ar'
+          ? 'تم رفض الاستئناف وتوثيق القرار.'
+          : 'Appeal rejected and decision logged.'
+    );
+    await loadCurrentData();
+  };
+
   const handleDirectUserStatus = async (
     userId: string,
     action: 'ACTIVATE' | 'WARN' | 'RESTRICT' | 'SUSPEND' | 'BAN',
@@ -426,6 +461,7 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
       <div className="bg-white dark:bg-[#1E1B2E] border-b border-slate-200 dark:border-white/10 px-3 flex items-center gap-1.5 overflow-x-auto shrink-0">
         {[
           { id: 'reports' as AdminTab, label: t.reportsTab, icon: ShieldAlert },
+          { id: 'appeals' as AdminTab, label: lang === 'ar' ? 'استئنافات الحظر' : lang === 'fr' ? 'Recours' : 'Ban appeals', icon: AlertTriangle },
           { id: 'overview' as AdminTab, label: lang === 'ar' ? 'الإحصائيات' : 'Overview', icon: BarChart3 },
           { id: 'audit_logs' as AdminTab, label: t.auditLogsTab, icon: History },
           { id: 'users' as AdminTab, label: t.usersTab, icon: Users },
@@ -732,6 +768,77 @@ export const AdminModerationDashboard: React.FC<AdminModerationDashboardProps> =
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === 'appeals' && (
+          <div className="space-y-3">
+            <h3 className="text-sm font-bold">
+              {lang === 'ar' ? 'طلبات مراجعة الحظر الدائم' : lang === 'fr' ? 'Recours contre les bannissements' : 'Permanent ban appeals'}
+            </h3>
+            {banAppeals.length === 0 ? (
+              <div className="rounded-3xl bg-white p-8 text-center text-xs text-slate-500 dark:bg-[#1E1B2E]">
+                {lang === 'ar' ? 'لا توجد طلبات استئناف.' : lang === 'fr' ? 'Aucun recours.' : 'No ban appeals.'}
+              </div>
+            ) : banAppeals.map((appeal) => (
+              <article key={appeal.id} className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-[#1E1B2E]">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <strong className="text-sm">{appeal.user_nickname}</strong>
+                  <span className="text-[11px] text-slate-500">
+                    {new Date(appeal.created_at).toLocaleString(lang)}
+                  </span>
+                </div>
+                <p className="rounded-xl bg-rose-50 p-3 text-xs dark:bg-rose-950/20">
+                  <strong>{lang === 'ar' ? 'سبب الحظر: ' : lang === 'fr' ? 'Motif du bannissement : ' : 'Ban reason: '}</strong>
+                  {appeal.ban_reason}
+                </p>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-50 p-3 text-xs leading-relaxed dark:bg-[#151221]">
+                  {appeal.message}
+                </p>
+                {appeal.status === 'PENDING' ? (
+                  selfUser.role === 'owner' ? (
+                    <div className="space-y-2">
+                      <textarea
+                        rows={2}
+                        maxLength={1000}
+                        required
+                        value={appealNotes[appeal.id] || ''}
+                        onChange={(event) => setAppealNotes((current) => ({ ...current, [appeal.id]: event.target.value }))}
+                        placeholder={lang === 'ar' ? 'ملاحظة القرار (مطلوبة)' : lang === 'fr' ? 'Note de décision (obligatoire)' : 'Decision note (required)'}
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs dark:border-white/10 dark:bg-[#151221]"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          disabled={reviewingAppealId === appeal.id}
+                          onClick={() => void handleReviewBanAppeal(appeal, 'ACCEPT')}
+                          className="min-h-10 rounded-xl bg-emerald-700 px-4 text-xs font-bold text-white disabled:opacity-50"
+                        >
+                          {lang === 'ar' ? 'قبول ورفع الحظر' : lang === 'fr' ? 'Accepter et lever' : 'Accept & lift ban'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={reviewingAppealId === appeal.id}
+                          onClick={() => void handleReviewBanAppeal(appeal, 'REJECT')}
+                          className="min-h-10 rounded-xl bg-rose-700 px-4 text-xs font-bold text-white disabled:opacity-50"
+                        >
+                          {lang === 'ar' ? 'رفض الاستئناف' : lang === 'fr' ? 'Refuser le recours' : 'Reject appeal'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs font-semibold text-amber-700">{lang === 'ar' ? 'بانتظار مراجعة مالك المنصة.' : lang === 'fr' ? 'En attente du propriétaire.' : 'Awaiting platform owner review.'}</p>
+                  )
+                ) : (
+                  <p className="text-xs font-semibold">
+                    {appeal.status === 'ACCEPTED'
+                      ? lang === 'ar' ? 'مقبول — رُفع الحظر' : lang === 'fr' ? 'Accepté — bannissement levé' : 'Accepted — ban lifted'
+                      : lang === 'ar' ? 'مرفوض' : lang === 'fr' ? 'Refusé' : 'Rejected'}
+                    {appeal.review_note ? ` · ${appeal.review_note}` : ''}
+                  </p>
+                )}
+              </article>
+            ))}
           </div>
         )}
 

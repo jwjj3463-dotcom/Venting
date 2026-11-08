@@ -11,7 +11,7 @@ export type AccountStatus = 'active' | 'warned' | 'restricted' | 'suspended' | '
 export type ChatRoomType = 'LINK_BASED' | 'RANDOM';
 export type ChatRoomStatus = 'PENDING' | 'ACCEPTED' | 'BLOCKED';
 export type MessageStatus = 'SENT' | 'READ';
-export type MediaType = 'text' | 'image' | 'sticker';
+export type MediaType = 'text' | 'image' | 'sticker' | 'audio' | 'video';
 export type PremiumPlan = 'free' | (string & {});
 
 export type ReportStatus = 'PENDING' | 'UNDER_REVIEW' | 'ACTION_TAKEN' | 'DISMISSED';
@@ -22,6 +22,8 @@ export type ModerationActionType =
   | 'SUSPEND'
   | 'BAN'
   | 'UNBAN'
+  | 'BAN_APPEAL_ACCEPT'
+  | 'BAN_APPEAL_REJECT'
   | 'RESOLVE_REPORT'
   | 'DISMISS_REPORT';
 
@@ -62,8 +64,10 @@ export interface RealmUser {
   bio: string;
   age?: number;
   is_adult?: boolean;
+  gender?: 'female' | 'male' | 'other';
   role: UserRole;
   status: AccountStatus;
+  is_trusted_member?: boolean;
   warning_message?: string;
   restriction_reason?: string;
   suspension_until?: number;
@@ -179,7 +183,7 @@ export interface RealmPaymentTransaction {
 export interface RealmAppSettings {
   id: string;
   theme: 'dark' | 'light';
-  language: 'ar' | 'en';
+  language: 'ar' | 'en' | 'fr';
   auth_token: string;
   custom_server_url: string;
   pending_recovery_code?: string;
@@ -231,6 +235,7 @@ export const FADFADAH_REALM_SCHEMAS: RealmObjectSchema[] = [
       is_online: 'bool',
       bio: 'string',
       age: 'int?',
+      gender: 'string?',
       role: 'string',
       status: 'string',
     },

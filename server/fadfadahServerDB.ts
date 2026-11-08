@@ -10,6 +10,7 @@ const DATA_DIR = process.env.FADFADAH_DATA_DIR?.trim()
   ? path.resolve(process.env.FADFADAH_DATA_DIR.trim())
   : path.resolve(__dirname, '..', 'data');
 const DB_FILE = path.join(DATA_DIR, 'fadfadah.db.json');
+const CALL_LOG_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
 export type UserRole = 'owner' | 'moderator' | 'user';
 export type AccountStatus = 'active' | 'warned' | 'restricted' | 'suspended' | 'banned';
@@ -17,8 +18,9 @@ export const OWNER_MIN_POINTS = 1_000_000;
 
 export type ChatRoomType = 'LINK_BASED' | 'RANDOM';
 export type ChatRoomStatus = 'PENDING' | 'ACCEPTED' | 'BLOCKED';
+export type GroupRoomCategory = 'PUBLIC' | 'PRIVATE' | 'HOSTED';
 export type MessageStatus = 'SENT' | 'READ';
-export type MediaType = 'text' | 'image' | 'sticker';
+export type MediaType = 'text' | 'image' | 'sticker' | 'audio' | 'video';
 export type PremiumPlan = 'free' | 'weekly' | 'monthly' | 'quarterly';
 
 export type ReportStatus = 'PENDING' | 'UNDER_REVIEW' | 'ACTION_TAKEN' | 'DISMISSED';
@@ -29,6 +31,8 @@ export type ModerationActionType =
   | 'SUSPEND'
   | 'BAN'
   | 'UNBAN'
+  | 'BAN_APPEAL_ACCEPT'
+  | 'BAN_APPEAL_REJECT'
   | 'RESOLVE_REPORT'
   | 'DISMISS_REPORT';
 
@@ -95,6 +99,8 @@ export interface ServerUserRecord {
   id: string;
   auth_token_hash: string;
   recovery_code_hash?: string;
+  auth_username?: string;
+  password_hash?: string;
   nickname: string;
   avatar_url: string;
   frame_id: number;
@@ -111,8 +117,12 @@ export interface ServerUserRecord {
   daily_random_count: number;
   last_random_date: string;
   bio: string;
+  age?: number;
+  gender?: 'female' | 'male' | 'other';
   role: UserRole;
   status: AccountStatus;
+  accepted_message_count?: number;
+  is_trusted_member?: boolean;
   warning_message?: string;
   restriction_reason?: string;
   suspension_until?: number;
@@ -137,7 +147,10 @@ export interface PublicUserDTO {
   role: UserRole;
   status: AccountStatus;
   is_online: boolean;
+  is_trusted_member: boolean;
   bio: string;
+  age?: number;
+  gender?: 'female' | 'male' | 'other';
 }
 
 export interface ServerPersonalLink {
@@ -160,6 +173,36 @@ export interface ServerChatRoom {
   last_message_preview: string;
   last_message_at: number;
   created_at: number;
+}
+
+export interface ServerGroupRoom {
+  id: string;
+  name_ar: string;
+  name_en: string;
+  description_ar: string;
+  description_en: string;
+  category: GroupRoomCategory;
+  invite_code?: string;
+  created_by: string;
+  host_id: string;
+  member_ids: string[];
+  password_salt?: string;
+  password_hash?: string;
+  created_at: number;
+  updated_at: number;
+  is_active: boolean;
+}
+
+export interface ServerGroupMessage {
+  id: string;
+  room_id: string;
+  sender_id: string;
+  content: string;
+  mentioned_user_ids?: string[];
+  created_at: number;
+  is_frozen: boolean;
+  ai_flag_score: number;
+  ai_flag_reason: string;
 }
 
 export interface ServerMessage {
@@ -222,6 +265,31 @@ export interface ServerModerationAction {
   created_at: number;
 }
 
+export interface ServerBanAppeal {
+  id: string;
+  user_id: string;
+  user_nickname: string;
+  ban_reason: string;
+  message: string;
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+  created_at: number;
+  reviewed_at?: number;
+  reviewed_by?: string;
+  reviewed_by_name?: string;
+  review_note?: string;
+}
+
+export interface ServerCallLog {
+  id: string;
+  room_id: string;
+  caller_id: string;
+  callee_id: string;
+  call_type: 'audio' | 'video';
+  started_at: number;
+  ended_at?: number;
+  duration_seconds?: number;
+}
+
 export interface ServerPaymentTransaction {
   id: string;
   user_id: string;
@@ -273,10 +341,14 @@ interface PersistedDatabaseShape {
   users: ServerUserRecord[];
   personal_links: ServerPersonalLink[];
   chat_rooms: ServerChatRoom[];
+  group_rooms?: ServerGroupRoom[];
+  group_messages?: ServerGroupMessage[];
   messages: ServerMessage[];
   public_vents: ServerPublicVent[];
   reports_moderation: ServerReportModeration[];
   moderation_actions?: ServerModerationAction[];
+  ban_appeals?: ServerBanAppeal[];
+  call_logs?: ServerCallLog[];
   payment_transactions?: ServerPaymentTransaction[];
   manual_topup_requests?: ServerManualTopupRequest[];
   manual_topup_packages?: ServerManualTopupPackage[];
@@ -334,16 +406,42 @@ export function generateRawToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
+export function normalizeAuthUsername(username: string): string {
+  return username.normalize('NFKC').trim().toLocaleLowerCase('en-US');
+}
+
+function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(password, salt, 64);
+  return `${salt.toString('hex')}:${hash.toString('hex')}`;
+}
+
+function verifyPassword(password: string, storedHash: string): boolean {
+  const [saltHex, hashHex] = storedHash.split(':');
+  if (!/^[a-f0-9]{32}$/.test(saltHex || '') || !/^[a-f0-9]{128}$/.test(hashHex || '')) {
+    return false;
+  }
+  const salt = Buffer.from(saltHex, 'hex');
+  const expectedHash = Buffer.from(hashHex, 'hex');
+  const suppliedHash = crypto.scryptSync(password, salt, expectedHash.length);
+  return crypto.timingSafeEqual(expectedHash, suppliedHash);
+}
+
 export class FadfadahServerDB {
   public users = new Map<string, ServerUserRecord>();
   public tokenIndex = new Map<string, string>(); // tokenHash -> userId
+  public usernameIndex = new Map<string, string>(); // normalized username -> userId
   public personalLinks = new Map<string, ServerPersonalLink>(); // linkId -> link
   public slugIndex = new Map<string, string>(); // slug -> linkId
   public chatRooms = new Map<string, ServerChatRoom>();
+  public groupRooms = new Map<string, ServerGroupRoom>();
+  public groupMessages = new Map<string, ServerGroupMessage>();
   public messages = new Map<string, ServerMessage>();
   public publicVents = new Map<string, ServerPublicVent>();
   public reports = new Map<string, ServerReportModeration>();
   public moderationActions = new Map<string, ServerModerationAction>();
+  public banAppeals = new Map<string, ServerBanAppeal>();
+  public callLogs = new Map<string, ServerCallLog>();
   public paymentTransactions = new Map<string, ServerPaymentTransaction>();
   public manualTopupRequests = new Map<string, ServerManualTopupRequest>();
   public manualTopupPackages: ServerManualTopupPackage[] = [];
@@ -362,6 +460,8 @@ export class FadfadahServerDB {
     }
     if (fs.existsSync(DB_FILE)) {
       let ownerPointsChanged = false;
+      let expiredCallLogsRemoved = false;
+      let acceptedMessageCountsChanged = false;
       try {
         const raw = await fsp.readFile(DB_FILE, 'utf-8');
         const parsed = JSON.parse(raw) as Partial<PersistedDatabaseShape>;
@@ -378,6 +478,9 @@ export class FadfadahServerDB {
           }
           this.users.set(u.id, u);
           this.tokenIndex.set(u.auth_token_hash, u.id);
+          if (u.auth_username) {
+            this.usernameIndex.set(normalizeAuthUsername(u.auth_username), u.id);
+          }
         }
         for (const l of parsed.personal_links ?? []) {
           this.personalLinks.set(l.id, l);
@@ -386,8 +489,37 @@ export class FadfadahServerDB {
         for (const r of parsed.chat_rooms ?? []) {
           this.chatRooms.set(r.id, r);
         }
+        for (const r of parsed.group_rooms ?? []) {
+          this.groupRooms.set(r.id, r);
+        }
+        for (const m of parsed.group_messages ?? []) {
+          this.groupMessages.set(m.id, m);
+        }
         for (const m of parsed.messages ?? []) {
           this.messages.set(m.id, m);
+        }
+        const acceptedMessageCounts = new Map<string, number>();
+        for (const message of this.messages.values()) {
+          if (!message.is_frozen) {
+            acceptedMessageCounts.set(
+              message.sender_id,
+              (acceptedMessageCounts.get(message.sender_id) ?? 0) + 1
+            );
+          }
+        }
+        for (const message of this.groupMessages.values()) {
+          if (!message.is_frozen) {
+            acceptedMessageCounts.set(
+              message.sender_id,
+              (acceptedMessageCounts.get(message.sender_id) ?? 0) + 1
+            );
+          }
+        }
+        for (const user of this.users.values()) {
+          if (!Number.isSafeInteger(user.accepted_message_count) || user.accepted_message_count! < 0) {
+            user.accepted_message_count = acceptedMessageCounts.get(user.id) ?? 0;
+            acceptedMessageCountsChanged = true;
+          }
         }
         for (const v of parsed.public_vents ?? []) {
           this.publicVents.set(v.id, v);
@@ -400,6 +532,16 @@ export class FadfadahServerDB {
         }
         for (const act of parsed.moderation_actions ?? []) {
           this.moderationActions.set(act.id, act);
+        }
+        for (const appeal of parsed.ban_appeals ?? []) {
+          this.banAppeals.set(appeal.id, appeal);
+        }
+        for (const call of parsed.call_logs ?? []) {
+          if (call.started_at >= Date.now() - CALL_LOG_RETENTION_MS) {
+            this.callLogs.set(call.id, call);
+          } else {
+            expiredCallLogsRemoved = true;
+          }
         }
         for (const tx of parsed.payment_transactions ?? []) {
           this.paymentTransactions.set(tx.id, tx);
@@ -422,7 +564,7 @@ export class FadfadahServerDB {
       } catch (err) {
         console.error('Failed to read existing fadfadah.db.json, starting fresh:', err);
       }
-      if (ownerPointsChanged) {
+      if (ownerPointsChanged || expiredCallLogsRemoved || acceptedMessageCountsChanged) {
         await this.flushNow();
       }
     } else {
@@ -441,16 +583,33 @@ export class FadfadahServerDB {
     }, 60);
   }
 
+  pruneExpiredCallLogs(now = Date.now()): boolean {
+    let removed = false;
+    for (const [id, call] of this.callLogs) {
+      if (call.started_at < now - CALL_LOG_RETENTION_MS) {
+        this.callLogs.delete(id);
+        removed = true;
+      }
+    }
+    return removed;
+  }
+
   async flushNow(): Promise<void> {
     const snapshot: PersistedDatabaseShape = {
-      schemaVersion: 391,
+      schemaVersion: 396,
       users: Array.from(this.users.values()),
       personal_links: Array.from(this.personalLinks.values()),
       chat_rooms: Array.from(this.chatRooms.values()),
+      group_rooms: Array.from(this.groupRooms.values()),
+      group_messages: Array.from(this.groupMessages.values()),
       messages: Array.from(this.messages.values()),
       public_vents: Array.from(this.publicVents.values()),
       reports_moderation: Array.from(this.reports.values()),
       moderation_actions: Array.from(this.moderationActions.values()),
+      ban_appeals: Array.from(this.banAppeals.values()),
+      call_logs: Array.from(this.callLogs.values()).filter(
+        (call) => call.started_at >= Date.now() - CALL_LOG_RETENTION_MS
+      ),
       payment_transactions: Array.from(this.paymentTransactions.values()),
       manual_topup_requests: Array.from(this.manualTopupRequests.values()),
       manual_topup_packages: this.manualTopupPackages,
@@ -525,6 +684,22 @@ export class FadfadahServerDB {
     return false;
   }
 
+  isTrustedMember(user: ServerUserRecord, now = Date.now()): boolean {
+    const trusted =
+      user.status === 'active' &&
+      now - user.created_at >= 24 * 60 * 60 * 1000 &&
+      (user.accepted_message_count ?? 0) >= 10;
+    user.is_trusted_member = trusted;
+    return trusted;
+  }
+
+  recordAcceptedMessage(userId: string): void {
+    const user = this.users.get(userId);
+    if (!user) return;
+    user.accepted_message_count = (user.accepted_message_count ?? 0) + 1;
+    this.isTrustedMember(user);
+  }
+
   reserveUniqueSlug(desired: string, currentUserId?: string): string {
     const base =
       desired
@@ -550,9 +725,12 @@ export class FadfadahServerDB {
   registerNewUser(params?: {
     nickname?: string;
     avatar_url?: string;
+    password?: string;
     country?: string;
     languages?: string[];
     interests?: string[];
+    age?: number;
+    gender?: 'female' | 'male' | 'other';
   }): {
     user: ServerUserRecord;
     link: ServerPersonalLink;
@@ -577,6 +755,12 @@ export class FadfadahServerDB {
       id,
       auth_token_hash: tokenHash,
       recovery_code_hash: hashAuthToken(recoveryCode),
+      ...(params?.password
+        ? {
+            auth_username: normalizeAuthUsername(nickname),
+            password_hash: hashPassword(params.password),
+          }
+        : {}),
       nickname,
       avatar_url: params?.avatar_url || 'aurora',
       frame_id: 0,
@@ -592,8 +776,12 @@ export class FadfadahServerDB {
       daily_random_count: 0,
       last_random_date: todayStr,
       bio: 'مساحة آمنة للفضفضة والدردشة المجهولة.',
+      age: params?.age,
+      gender: params?.gender,
       role: 'user',
       status: 'active',
+      accepted_message_count: 0,
+      is_trusted_member: false,
       created_at: now,
       last_seen_at: now,
     };
@@ -609,11 +797,41 @@ export class FadfadahServerDB {
 
     this.users.set(user.id, user);
     this.tokenIndex.set(tokenHash, user.id);
+    if (user.auth_username) this.usernameIndex.set(user.auth_username, user.id);
     this.personalLinks.set(link.id, link);
     this.slugIndex.set(slug, link.id);
     this.scheduleSave();
 
     return { user, link, rawToken, recoveryCode };
+  }
+
+  isUsernameTaken(username: string, exceptUserId?: string): boolean {
+    const normalized = normalizeAuthUsername(username);
+    return Array.from(this.users.values()).some(
+      (user) =>
+        user.id !== exceptUserId && normalizeAuthUsername(user.nickname) === normalized
+    );
+  }
+
+  loginWithPassword(username: string, password: string): {
+    user: ServerUserRecord;
+    link: ServerPersonalLink;
+    rawToken: string;
+  } | null {
+    const userId = this.usernameIndex.get(normalizeAuthUsername(username));
+    const user = userId ? this.users.get(userId) : undefined;
+    if (!user?.password_hash || !verifyPassword(password, user.password_hash)) return null;
+
+    const link = this.getLinkForUser(user.id);
+    if (!link) return null;
+
+    const rawToken = generateRawToken();
+    this.tokenIndex.delete(user.auth_token_hash);
+    user.auth_token_hash = hashAuthToken(rawToken);
+    this.tokenIndex.set(user.auth_token_hash, user.id);
+    user.last_seen_at = Date.now();
+    this.scheduleSave();
+    return { user, link, rawToken };
   }
 
   recoverAccount(recoveryCode: string): {
@@ -723,7 +941,10 @@ export class FadfadahServerDB {
       role: u.role,
       status: u.status,
       is_online: isOnline,
+      is_trusted_member: this.isTrustedMember(u),
       bio: u.bio,
+      age: u.age,
+      gender: u.gender,
     };
   }
 
@@ -733,7 +954,11 @@ export class FadfadahServerDB {
     if (!user) return [];
 
     this.tokenIndex.delete(user.auth_token_hash);
+    if (user.auth_username) this.usernameIndex.delete(normalizeAuthUsername(user.auth_username));
     this.users.delete(userId);
+    for (const [appealId, appeal] of this.banAppeals.entries()) {
+      if (appeal.user_id === userId) this.banAppeals.delete(appealId);
+    }
 
     for (const [linkId, l] of this.personalLinks.entries()) {
       if (l.user_id === userId) {
@@ -756,6 +981,17 @@ export class FadfadahServerDB {
       if (deletedRoomIds.has(m.room_id) || m.sender_id === userId) {
         this.messages.delete(msgId);
       }
+    }
+
+    for (const room of this.groupRooms.values()) {
+      if (!room.member_ids.includes(userId)) continue;
+      room.member_ids = room.member_ids.filter((memberId) => memberId !== userId);
+      if (room.host_id === userId) room.host_id = room.member_ids[0] || room.created_by;
+      if (room.member_ids.length === 0) room.is_active = false;
+      room.updated_at = Date.now();
+    }
+    for (const [messageId, message] of this.groupMessages.entries()) {
+      if (message.sender_id === userId) this.groupMessages.delete(messageId);
     }
 
     for (const [ventId, v] of this.publicVents.entries()) {

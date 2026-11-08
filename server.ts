@@ -12,12 +12,17 @@ import {
   cosineSimilarityServer,
   serverDB,
   type ChatRoomStatus,
+  type GroupRoomCategory,
   type MediaType,
+  type ServerGroupMessage,
+  type ServerGroupRoom,
   type ServerChatRoom,
   type ServerMessage,
   type ServerUserRecord,
   type ServerReportModeration,
   type ServerModerationAction,
+  type ServerBanAppeal,
+  type ServerCallLog,
   type ServerPaymentTransaction,
   type ServerManualTopupRequest,
   type ServerManualTopupPackage,
@@ -29,6 +34,7 @@ import {
   type ReportTargetType,
   type ReportStatus,
   OWNER_MIN_POINTS,
+  normalizeAuthUsername,
 } from './server/fadfadahServerDB.ts';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -97,6 +103,12 @@ const PROFANITY_PATTERNS = [
   /غبي|أحمق|حيوان|تافه|لعنة|قذر/i,
   /\b(idiot|stupid|loser|shut up|trash)\b/i,
 ];
+const HYPERLINK_PATTERN =
+  /(?:https?:\/\/|www\.)\S+|\b(?:[\p{L}\d](?:[\p{L}\d-]*[\p{L}\d])?\.)+[\p{L}]{2,}(?:\/\S*)?/iu;
+
+function containsHyperlink(text: string): boolean {
+  return HYPERLINK_PATTERN.test(text);
+}
 
 interface ModerationVerdict {
   flagScore: number;
@@ -223,6 +235,9 @@ const FRAME_POINTS_COST: Record<number, { cost: number; vipOnly: boolean }> = {
 
 async function startServer() {
   await serverDB.init();
+  setInterval(() => {
+    if (serverDB.pruneExpiredCallLogs()) serverDB.scheduleSave();
+  }, 60 * 60 * 1000);
 
   const app = express();
   const httpServer = http.createServer(app);
@@ -245,6 +260,66 @@ async function startServer() {
 
   // Live WebSocket Connection Registry & Real Matchmaking Queue
   const activeSockets = new Map<string, Set<WebSocket>>(); // userId -> sockets
+  const activeCallsByRoom = new Map<string, string>();
+  const connectFourRows = 6;
+  const connectFourColumns = 7;
+  function getConnectFourDropIndex(board: Array<'X' | 'O' | null>, column: number): number {
+    if (!Number.isInteger(column) || column < 0 || column >= connectFourColumns) return -1;
+    for (let row = connectFourRows - 1; row >= 0; row -= 1) {
+      const index = row * connectFourColumns + column;
+      if (board[index] === null) return index;
+    }
+    return -1;
+  }
+  function getConnectFourWinner(board: Array<'X' | 'O' | null>): 'X' | 'O' | null {
+    for (let row = 0; row < connectFourRows; row += 1) {
+      for (let column = 0; column < connectFourColumns; column += 1) {
+        const mark = board[row * connectFourColumns + column];
+        if (!mark) continue;
+        for (const [rowStep, columnStep] of [[0, 1], [1, 0], [1, 1], [1, -1]]) {
+          const cells = Array.from({ length: 4 }, (_, offset) => {
+            const nextRow = row + rowStep * offset;
+            const nextColumn = column + columnStep * offset;
+            return nextRow >= 0 && nextRow < connectFourRows &&
+              nextColumn >= 0 && nextColumn < connectFourColumns
+              ? board[nextRow * connectFourColumns + nextColumn]
+              : null;
+          });
+          if (cells.every((cell) => cell === mark)) return mark;
+        }
+      }
+    }
+    return null;
+  }
+  type ChatGameState = {
+    id: string;
+    roomId: string;
+    createdAt: number;
+    gameType: 'tic-tac-toe' | 'rock-paper-scissors' | 'connect-four' | 'guess-number' | 'bulls-cows' | 'pig-dice' | 'nim';
+    inviterId: string;
+    opponentId: string;
+    status: 'invited' | 'active' | 'finished';
+    board: Array<'X' | 'O' | null>;
+    turnUserId: string;
+    winner: 'X' | 'O' | 'DRAW' | null;
+    round?: number;
+    roundWinners?: Array<'X' | 'O' | 'DRAW'>;
+    pendingChoices?: Partial<Record<string, 'rock' | 'paper' | 'scissors'>>;
+    secretNumber?: number;
+    secretCode?: string;
+    secretReady?: boolean;
+    lastGuess?: number;
+    guessHint?: 'higher' | 'lower' | 'correct';
+    lastCodeGuess?: string;
+    bulls?: number;
+    cows?: number;
+    scores?: Record<string, number>;
+    turnPoints?: number;
+    lastDieRoll?: number;
+    nimHeaps?: number[];
+  };
+  const chatGamesById = new Map<string, ChatGameState>();
+  const activeChatGamesByRoom = new Map<string, string>();
   const matchQueue = new Map<
     string,
     { countryFilter: string; langFilter: string; joinedAt: number }
@@ -266,6 +341,28 @@ async function startServer() {
     }
   }
 
+  function publicChatGame(game: ChatGameState) {
+    const {
+      pendingChoices: _pendingChoices,
+      secretNumber: _secretNumber,
+      secretCode: _secretCode,
+      ...publicGame
+    } = game;
+    return publicGame;
+  }
+
+  function sendChatGameState(game: ChatGameState): void {
+    for (const userId of [game.inviterId, game.opponentId]) {
+      sendToUser(userId, {
+        type: 'game:state',
+        game: {
+          ...publicChatGame(game),
+          pendingMove: game.pendingChoices?.[userId] ?? null,
+        },
+      });
+    }
+  }
+
   function broadcastAll(eventPayload: Record<string, unknown>): void {
     const raw = JSON.stringify(eventPayload);
     for (const set of activeSockets.values()) {
@@ -276,6 +373,19 @@ async function startServer() {
       }
     }
   }
+
+  const chatGameInvitationExpiryTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [gameId, game] of chatGamesById) {
+      if (game.status !== 'invited' || now - game.createdAt < 60_000) continue;
+      const event = { type: 'game:end', game: publicChatGame(game), reason: 'expired' };
+      chatGamesById.delete(gameId);
+      activeChatGamesByRoom.delete(game.roomId);
+      sendToUser(game.inviterId, event);
+      sendToUser(game.opponentId, event);
+    }
+  }, 10_000);
+  chatGameInvitationExpiryTimer.unref();
 
   function broadcastStaff(eventPayload: Record<string, unknown>): void {
     const raw = JSON.stringify(eventPayload);
@@ -396,6 +506,22 @@ async function startServer() {
           isTyping?: boolean;
           countryFilter?: string;
           langFilter?: string;
+          callId?: string;
+          gameId?: string;
+          gameType?: string;
+          accept?: boolean;
+          index?: number;
+          guess?: number;
+          secretNumber?: number;
+          secretCode?: string;
+          choice?: string;
+          codeGuess?: string;
+          action?: 'roll' | 'hold';
+          heapIndex?: number;
+          count?: number;
+          callType?: 'audio' | 'video';
+          signalKind?: 'offer' | 'answer' | 'ice' | 'end';
+          signal?: unknown;
         };
 
         const freshUser = serverDB.users.get(user.id);
@@ -412,6 +538,388 @@ async function startServer() {
             roomId: room.id,
             userId: freshUser.id,
             isTyping: Boolean(msg.isTyping),
+          });
+        } else if (msg.type === 'game:invite' && msg.roomId && msg.gameId) {
+          const room = serverDB.chatRooms.get(msg.roomId);
+          if (
+            !room ||
+            room.status !== 'ACCEPTED' ||
+            (room.participant_a !== freshUser.id && room.participant_b !== freshUser.id) ||
+            !['tic-tac-toe', 'rock-paper-scissors', 'connect-four', 'guess-number', 'bulls-cows', 'pig-dice', 'nim'].includes(msg.gameType || '') ||
+            !/^[a-f0-9-]{36}$/i.test(msg.gameId) ||
+            chatGamesById.has(msg.gameId) ||
+            activeChatGamesByRoom.has(room.id) ||
+            activeCallsByRoom.has(room.id)
+          ) return;
+          const opponentId =
+            room.participant_a === freshUser.id ? room.participant_b : room.participant_a;
+          const gameType =
+            msg.gameType === 'rock-paper-scissors'
+              ? 'rock-paper-scissors'
+              : msg.gameType === 'connect-four'
+                ? 'connect-four'
+                : msg.gameType === 'guess-number'
+                  ? 'guess-number'
+                  : msg.gameType === 'bulls-cows'
+                    ? 'bulls-cows'
+                    : msg.gameType === 'pig-dice'
+                      ? 'pig-dice'
+                      : msg.gameType === 'nim'
+                        ? 'nim'
+                  : 'tic-tac-toe';
+          const game: ChatGameState = {
+            id: msg.gameId,
+            roomId: room.id,
+            createdAt: Date.now(),
+            gameType,
+            inviterId: freshUser.id,
+            opponentId,
+            status: 'invited',
+            board: gameType === 'guess-number' || gameType === 'bulls-cows' || gameType === 'pig-dice' || gameType === 'nim'
+              ? []
+              : Array(gameType === 'connect-four' ? connectFourRows * connectFourColumns : 9).fill(null),
+            turnUserId: gameType === 'guess-number' || gameType === 'bulls-cows'
+              ? opponentId
+              : freshUser.id,
+            winner: null,
+            ...(gameType === 'guess-number' || gameType === 'bulls-cows'
+              ? { secretReady: false }
+              : {}),
+            ...(gameType === 'pig-dice'
+              ? { scores: { [freshUser.id]: 0, [opponentId]: 0 }, turnPoints: 0 }
+              : {}),
+            ...(gameType === 'nim' ? { nimHeaps: [3, 4, 5] } : {}),
+            ...(gameType === 'rock-paper-scissors'
+              ? { round: 1, roundWinners: [], pendingChoices: {} }
+              : {}),
+          };
+          chatGamesById.set(game.id, game);
+          activeChatGamesByRoom.set(room.id, game.id);
+          sendChatGameState(game);
+        } else if (msg.type === 'game:respond' && msg.gameId && typeof msg.accept === 'boolean') {
+          const game = chatGamesById.get(msg.gameId);
+          const room = game ? serverDB.chatRooms.get(game.roomId) : undefined;
+          if (
+            !game ||
+            !room ||
+            game.status !== 'invited' ||
+            game.opponentId !== freshUser.id ||
+            (room.participant_a !== freshUser.id && room.participant_b !== freshUser.id)
+          ) return;
+          if (msg.accept) {
+            game.status = 'active';
+            sendChatGameState(game);
+          } else {
+            const event = { type: 'game:end', game: publicChatGame(game), reason: 'declined' };
+            chatGamesById.delete(game.id);
+            activeChatGamesByRoom.delete(game.roomId);
+            sendToUser(game.inviterId, event);
+            sendToUser(game.opponentId, event);
+          }
+        } else if (
+          msg.type === 'game:set_secret' &&
+          msg.gameId
+        ) {
+          const game = chatGamesById.get(msg.gameId);
+          if (
+            !game ||
+            (game.gameType !== 'guess-number' && game.gameType !== 'bulls-cows') ||
+            game.status !== 'active' ||
+            game.inviterId !== freshUser.id ||
+            game.secretReady
+          ) return;
+          if (game.gameType === 'guess-number') {
+            if (
+              typeof msg.secretNumber !== 'number' ||
+              !Number.isInteger(msg.secretNumber) ||
+              msg.secretNumber < 1 ||
+              msg.secretNumber > 100
+            ) return;
+            game.secretNumber = msg.secretNumber;
+          } else {
+            if (
+              typeof msg.secretCode !== 'string' ||
+              !/^\d{4}$/.test(msg.secretCode) ||
+              new Set(msg.secretCode).size !== 4
+            ) return;
+            game.secretCode = msg.secretCode;
+          }
+          game.secretReady = true;
+          sendChatGameState(game);
+        } else if (msg.type === 'game:move' && msg.gameId) {
+          const game = chatGamesById.get(msg.gameId);
+          const room = game ? serverDB.chatRooms.get(game.roomId) : undefined;
+          if (
+            !game ||
+            !room ||
+            room.status !== 'ACCEPTED' ||
+            (room.participant_a !== freshUser.id && room.participant_b !== freshUser.id) ||
+            game.status !== 'active' ||
+            (game.gameType !== 'rock-paper-scissors' && game.turnUserId !== freshUser.id)
+          ) return;
+          if (game.gameType === 'nim') {
+            const heaps = game.nimHeaps;
+            if (
+              !heaps ||
+              !Number.isInteger(msg.heapIndex) ||
+              !Number.isInteger(msg.count) ||
+              msg.heapIndex! < 0 ||
+              msg.heapIndex! >= heaps.length ||
+              msg.count! < 1 ||
+              msg.count! > heaps[msg.heapIndex!]
+            ) return;
+            heaps[msg.heapIndex!] -= msg.count!;
+            if (heaps.every((size) => size === 0)) {
+              game.winner = freshUser.id === game.inviterId ? 'O' : 'X';
+              game.status = 'finished';
+              activeChatGamesByRoom.delete(game.roomId);
+            } else {
+              game.turnUserId =
+                freshUser.id === game.inviterId ? game.opponentId : game.inviterId;
+            }
+          } else if (game.gameType === 'pig-dice') {
+            if (msg.action === 'hold') {
+              game.scores ??= { [game.inviterId]: 0, [game.opponentId]: 0 };
+              game.scores[freshUser.id] = (game.scores[freshUser.id] ?? 0) + (game.turnPoints ?? 0);
+              game.turnPoints = 0;
+              game.lastDieRoll = undefined;
+              game.turnUserId =
+                freshUser.id === game.inviterId ? game.opponentId : game.inviterId;
+            } else if (msg.action === 'roll') {
+              const roll = crypto.randomInt(1, 7);
+              game.lastDieRoll = roll;
+              if (roll === 1) {
+                game.turnPoints = 0;
+                game.turnUserId =
+                  freshUser.id === game.inviterId ? game.opponentId : game.inviterId;
+              } else {
+                game.turnPoints = (game.turnPoints ?? 0) + roll;
+              }
+            } else {
+              return;
+            }
+          } else if (game.gameType === 'guess-number') {
+            if (
+              !game.secretReady ||
+              !Number.isInteger(msg.guess) ||
+              msg.guess! < 1 ||
+              msg.guess! > 100 ||
+              freshUser.id !== game.opponentId
+            ) return;
+            game.lastGuess = msg.guess;
+            game.guessHint =
+              msg.guess === game.secretNumber
+                ? 'correct'
+                : msg.guess! < game.secretNumber!
+                  ? 'higher'
+                  : 'lower';
+            if (game.guessHint === 'correct') {
+              game.winner = 'O';
+              game.status = 'finished';
+              activeChatGamesByRoom.delete(game.roomId);
+            }
+          } else if (game.gameType === 'bulls-cows') {
+            if (
+              !game.secretReady ||
+              typeof msg.codeGuess !== 'string' ||
+              !/^\d{4}$/.test(msg.codeGuess) ||
+              new Set(msg.codeGuess).size !== 4 ||
+              freshUser.id !== game.opponentId
+            ) return;
+            const bulls = [...msg.codeGuess].filter(
+              (digit, index) => game.secretCode?.[index] === digit
+            ).length;
+            const matchingDigits = [...msg.codeGuess].filter(
+              (digit) => game.secretCode?.includes(digit)
+            ).length;
+            game.lastCodeGuess = msg.codeGuess;
+            game.bulls = bulls;
+            game.cows = matchingDigits - bulls;
+            if (bulls === 4) {
+              game.winner = 'O';
+              game.status = 'finished';
+              activeChatGamesByRoom.delete(game.roomId);
+            }
+          } else if (game.gameType === 'tic-tac-toe') {
+            if (
+              !Number.isInteger(msg.index) ||
+              msg.index! < 0 ||
+              msg.index! >= game.board.length ||
+              game.board[msg.index!] !== null
+            ) return;
+            game.board[msg.index!] = freshUser.id === game.inviterId ? 'X' : 'O';
+            const winningLines = [
+              [0, 1, 2], [3, 4, 5], [6, 7, 8],
+              [0, 3, 6], [1, 4, 7], [2, 5, 8],
+              [0, 4, 8], [2, 4, 6],
+            ];
+            const winningLine = winningLines.find(([a, b, c]) =>
+              game.board[a] !== null &&
+              game.board[a] === game.board[b] &&
+              game.board[a] === game.board[c]
+            );
+            if (winningLine) {
+              game.winner = game.board[winningLine[0]];
+              game.status = 'finished';
+              activeChatGamesByRoom.delete(game.roomId);
+            } else if (game.board.every((cell) => cell !== null)) {
+              game.winner = 'DRAW';
+              game.status = 'finished';
+              activeChatGamesByRoom.delete(game.roomId);
+            } else {
+              game.turnUserId =
+                freshUser.id === game.inviterId ? game.opponentId : game.inviterId;
+            }
+          } else if (game.gameType === 'connect-four') {
+            if (!Number.isInteger(msg.index)) return;
+            const index = getConnectFourDropIndex(game.board, msg.index!);
+            if (index < 0) return;
+            game.board[index] = freshUser.id === game.inviterId ? 'X' : 'O';
+            const winner = getConnectFourWinner(game.board);
+            if (winner) {
+              game.winner = winner;
+              game.status = 'finished';
+              activeChatGamesByRoom.delete(game.roomId);
+            } else if (game.board.every((cell) => cell !== null)) {
+              game.winner = 'DRAW';
+              game.status = 'finished';
+              activeChatGamesByRoom.delete(game.roomId);
+            } else {
+              game.turnUserId =
+                freshUser.id === game.inviterId ? game.opponentId : game.inviterId;
+            }
+          } else if (
+            game.gameType === 'rock-paper-scissors' &&
+            ['rock', 'paper', 'scissors'].includes(String(msg.choice)) &&
+            !game.pendingChoices?.[freshUser.id]
+          ) {
+            game.pendingChoices ??= {};
+            const choice =
+              msg.choice === 'rock' || msg.choice === 'paper' || msg.choice === 'scissors'
+                ? msg.choice
+                : null;
+            if (!choice) return;
+            game.pendingChoices[freshUser.id] = choice;
+            if (game.pendingChoices[game.inviterId] && game.pendingChoices[game.opponentId]) {
+              const inviterChoice = game.pendingChoices[game.inviterId]!;
+              const opponentChoice = game.pendingChoices[game.opponentId]!;
+              const roundWinner =
+                inviterChoice === opponentChoice
+                  ? 'DRAW'
+                  : (
+                      (inviterChoice === 'rock' && opponentChoice === 'scissors') ||
+                      (inviterChoice === 'paper' && opponentChoice === 'rock') ||
+                      (inviterChoice === 'scissors' && opponentChoice === 'paper')
+                    )
+                    ? 'X'
+                    : 'O';
+              game.roundWinners ??= [];
+              game.roundWinners.push(roundWinner);
+              game.pendingChoices = {};
+              if ((game.round ?? 1) >= 3) {
+                const xWins = game.roundWinners.filter((winner) => winner === 'X').length;
+                const oWins = game.roundWinners.filter((winner) => winner === 'O').length;
+                game.winner = xWins === oWins ? 'DRAW' : xWins > oWins ? 'X' : 'O';
+                game.status = 'finished';
+                activeChatGamesByRoom.delete(game.roomId);
+              } else {
+                game.round = (game.round ?? 1) + 1;
+              }
+            }
+          } else {
+            return;
+          }
+          sendChatGameState(game);
+        } else if (msg.type === 'game:end' && msg.gameId) {
+          const game = chatGamesById.get(msg.gameId);
+          const room = game ? serverDB.chatRooms.get(game.roomId) : undefined;
+          if (
+            !game ||
+            !room ||
+            room.status !== 'ACCEPTED' ||
+            (room.participant_a !== freshUser.id && room.participant_b !== freshUser.id) ||
+            (game.inviterId !== freshUser.id && game.opponentId !== freshUser.id)
+          ) return;
+          const event = { type: 'game:end', game: publicChatGame(game), reason: 'ended' };
+          chatGamesById.delete(game.id);
+          activeChatGamesByRoom.delete(game.roomId);
+          sendToUser(game.inviterId, event);
+          sendToUser(game.opponentId, event);
+        } else if (msg.type === 'call:start' && msg.roomId && msg.callId) {
+          const room = serverDB.chatRooms.get(msg.roomId);
+          if (
+            !room ||
+            room.status !== 'ACCEPTED' ||
+            (room.participant_a !== freshUser.id && room.participant_b !== freshUser.id) ||
+            !/^[a-f0-9-]{36}$/i.test(msg.callId) ||
+            (msg.callType !== 'audio' && msg.callType !== 'video') ||
+            serverDB.callLogs.has(msg.callId) ||
+            activeCallsByRoom.has(room.id) ||
+            activeChatGamesByRoom.has(room.id)
+          ) return;
+          const peerId =
+            room.participant_a === freshUser.id ? room.participant_b : room.participant_a;
+          const callLog: ServerCallLog = {
+            id: msg.callId,
+            room_id: room.id,
+            caller_id: freshUser.id,
+            callee_id: peerId,
+            call_type: msg.callType,
+            started_at: Date.now(),
+          };
+          serverDB.callLogs.set(callLog.id, callLog);
+          activeCallsByRoom.set(room.id, callLog.id);
+          serverDB.pruneExpiredCallLogs();
+          serverDB.scheduleSave();
+          sendToUser(peerId, {
+            type: 'call:signal',
+            roomId: room.id,
+            callId: callLog.id,
+            signalKind: 'start',
+            callType: callLog.call_type,
+            fromUserId: freshUser.id,
+          });
+        } else if (msg.type === 'call:signal' && msg.roomId && msg.callId) {
+          const room = serverDB.chatRooms.get(msg.roomId);
+          const callLog = serverDB.callLogs.get(msg.callId);
+          if (
+            !room ||
+            room.status !== 'ACCEPTED' ||
+            !callLog ||
+            callLog.ended_at ||
+            activeCallsByRoom.get(room.id) !== callLog.id ||
+            callLog.room_id !== room.id ||
+            (callLog.caller_id !== freshUser.id && callLog.callee_id !== freshUser.id) ||
+            (room.participant_a !== freshUser.id && room.participant_b !== freshUser.id) ||
+            !['offer', 'answer', 'ice', 'end'].includes(msg.signalKind || '')
+          ) return;
+          if (msg.signalKind !== 'end') {
+            let signalSize: number;
+            try {
+              signalSize = JSON.stringify(msg.signal).length;
+            } catch {
+              return;
+            }
+            if (signalSize > 32_000 || !msg.signal || typeof msg.signal !== 'object') return;
+          }
+          const peerId =
+            room.participant_a === freshUser.id ? room.participant_b : room.participant_a;
+          if (msg.signalKind === 'end' && !callLog.ended_at) {
+            callLog.ended_at = Date.now();
+            callLog.duration_seconds = Math.max(
+              0,
+              Math.floor((callLog.ended_at - callLog.started_at) / 1000)
+            );
+            activeCallsByRoom.delete(room.id);
+            serverDB.scheduleSave();
+          }
+          sendToUser(peerId, {
+            type: 'call:signal',
+            roomId: room.id,
+            callId: callLog.id,
+            signalKind: msg.signalKind,
+            signal: msg.signal,
+            fromUserId: freshUser.id,
           });
         } else if (msg.type === 'match:join_queue') {
           if (freshUser.status === 'restricted') return;
@@ -440,6 +948,36 @@ async function startServer() {
         if (set.size === 0) {
           activeSockets.delete(user.id);
           matchQueue.delete(user.id);
+          for (const [gameId, game] of chatGamesById) {
+            if (game.inviterId !== user.id && game.opponentId !== user.id) continue;
+            const event = { type: 'game:end', game: publicChatGame(game), reason: 'disconnected' };
+            chatGamesById.delete(gameId);
+            activeChatGamesByRoom.delete(game.roomId);
+            const peerId = game.inviterId === user.id ? game.opponentId : game.inviterId;
+            sendToUser(peerId, event);
+          }
+          for (const [roomId, callId] of activeCallsByRoom) {
+            const callLog = serverDB.callLogs.get(callId);
+            if (
+              !callLog ||
+              (callLog.caller_id !== user.id && callLog.callee_id !== user.id)
+            ) continue;
+            callLog.ended_at = Date.now();
+            callLog.duration_seconds = Math.max(
+              0,
+              Math.floor((callLog.ended_at - callLog.started_at) / 1000)
+            );
+            activeCallsByRoom.delete(roomId);
+            serverDB.scheduleSave();
+            const peerId = callLog.caller_id === user.id ? callLog.callee_id : callLog.caller_id;
+            sendToUser(peerId, {
+              type: 'call:signal',
+              roomId,
+              callId,
+              signalKind: 'end',
+              fromUserId: user.id,
+            });
+          }
         }
       }
       const existing = serverDB.users.get(user.id);
@@ -484,6 +1022,51 @@ async function startServer() {
     return true;
   }
 
+  async function verifyTurnstileRequest(
+    res: Response,
+    token: unknown
+  ): Promise<boolean> {
+    const secret = process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY?.trim();
+    if (!secret) {
+      if (process.env.NODE_ENV === 'production') {
+        res.status(503).json({ error: 'BOT_PROTECTION_NOT_CONFIGURED' });
+        return false;
+      }
+      return true;
+    }
+    if (typeof token !== 'string' || !token.trim()) {
+      res.status(400).json({ error: 'BOT_CHALLENGE_REQUIRED' });
+      return false;
+    }
+
+    try {
+      const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ secret, response: token }),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) {
+        res.status(503).json({ error: 'BOT_CHALLENGE_SERVICE_UNAVAILABLE' });
+        return false;
+      }
+      const result: unknown = await response.json();
+      if (
+        typeof result !== 'object' ||
+        result === null ||
+        !('success' in result) ||
+        result.success !== true
+      ) {
+        res.status(400).json({ error: 'BOT_CHALLENGE_FAILED' });
+        return false;
+      }
+      return true;
+    } catch {
+      res.status(503).json({ error: 'BOT_CHALLENGE_SERVICE_UNAVAILABLE' });
+      return false;
+    }
+  }
+
   // ============================================================================
   // REST API ROUTES
   // ============================================================================
@@ -500,14 +1083,63 @@ async function startServer() {
   });
 
   // 1. Register new real device account
-  app.post('/api/auth/register', (req: Request, res: Response) => {
-    const { nickname, avatar_url, country, languages, interests } = (req.body || {}) as {
+  app.post('/api/auth/register', async (req: Request, res: Response) => {
+    const {
+      nickname,
+      avatar_url,
+      country,
+      languages,
+      interests,
+      age,
+      gender,
+      password,
+      turnstileToken,
+    } = (req.body || {}) as {
       nickname?: string;
       avatar_url?: string;
       country?: string;
       languages?: string[];
       interests?: string[];
+      age?: number;
+      gender?: 'female' | 'male' | 'other';
+      password?: string;
+      turnstileToken?: string;
     };
+
+    if (password !== undefined) {
+      const cleanNickname = nickname?.trim() || '';
+      if (cleanNickname.length < 3 || cleanNickname.length > 24) {
+        res.status(400).json({ error: 'NICKNAME_MUST_BE_3_TO_24_CHARACTERS' });
+        return;
+      }
+      if (password.length < 8 || password.length > 128) {
+        res.status(400).json({ error: 'PASSWORD_MUST_BE_8_TO_128_CHARACTERS' });
+        return;
+      }
+      if (typeof age !== 'number' || !Number.isInteger(age) || age < 18 || age > 120) {
+        res.status(400).json({ error: 'AGE_MUST_BE_18_OR_OLDER' });
+        return;
+      }
+      if (!gender || !['female', 'male', 'other'].includes(gender)) {
+        res.status(400).json({ error: 'INVALID_GENDER' });
+        return;
+      }
+      if (serverDB.isUsernameTaken(cleanNickname)) {
+        res.status(409).json({ error: 'NICKNAME_ALREADY_IN_USE' });
+        return;
+      }
+    }
+
+    if (age !== undefined && (!Number.isInteger(age) || age < 18 || age > 120)) {
+      res.status(400).json({ error: 'AGE_MUST_BE_18_OR_OLDER' });
+      return;
+    }
+    if (gender !== undefined && !['female', 'male', 'other'].includes(gender)) {
+      res.status(400).json({ error: 'INVALID_GENDER' });
+      return;
+    }
+
+    if (!(await verifyTurnstileRequest(res, turnstileToken))) return;
 
     const { user, link, rawToken, recoveryCode } = serverDB.registerNewUser({
       nickname,
@@ -515,11 +1147,16 @@ async function startServer() {
       country,
       languages,
       interests,
+      age,
+      gender,
+      password,
     });
 
     const {
       auth_token_hash: _hidden,
       recovery_code_hash: _recoveryHash,
+      auth_username: _authUsername,
+      password_hash: _passwordHash,
       ...safeSelf
     } = user;
     res.json({
@@ -529,6 +1166,74 @@ async function startServer() {
       personalLink: link,
     });
 
+  });
+
+  app.post('/api/auth/login', (req: Request, res: Response) => {
+    const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    if (!username || !password) {
+      res.status(400).json({ error: 'USERNAME_AND_PASSWORD_REQUIRED' });
+      return;
+    }
+
+    const session = serverDB.loginWithPassword(username, password);
+    if (!session) {
+      res.status(401).json({ error: 'INVALID_USERNAME_OR_PASSWORD' });
+      return;
+    }
+    if (!verifyAccountActive(session.user, res)) return;
+
+    const {
+      auth_token_hash: _hidden,
+      recovery_code_hash: _recoveryHash,
+      auth_username: _authUsername,
+      password_hash: _passwordHash,
+      ...safeSelf
+    } = session.user;
+    res.json({
+      authToken: session.rawToken,
+      selfUser: { ...safeSelf, is_self: true, is_online: true },
+      personalLink: session.link,
+    });
+  });
+
+  app.get('/api/rooms/:roomId/call-ice-servers', (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    if (!user || !verifyAccountActive(user, res)) {
+      if (!user) res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    const room = serverDB.chatRooms.get(req.params.roomId || '');
+    if (
+      !room ||
+      room.status !== 'ACCEPTED' ||
+      (room.participant_a !== user.id && room.participant_b !== user.id)
+    ) {
+      res.status(403).json({ error: 'CALL_ROOM_NOT_AVAILABLE' });
+      return;
+    }
+    const urls = (process.env.TURN_SERVER_URLS || process.env.TURN_SERVER_URL || '')
+      .split(',')
+      .map((url) => url.trim())
+      .filter(Boolean);
+    const sharedSecret = process.env.TURN_SHARED_SECRET?.trim();
+    if (
+      urls.length === 0 ||
+      urls.some((url) => !/^(turn|turns):[^\s,]+$/i.test(url)) ||
+      !sharedSecret ||
+      Buffer.byteLength(sharedSecret, 'utf8') < 32
+    ) {
+      res.status(503).json({ error: 'CALL_TURN_NOT_CONFIGURED' });
+      return;
+    }
+    const expiresAt = Math.floor(Date.now() / 1000) + 60 * 60;
+    const username = `${expiresAt}:${user.id}`;
+    const credential = crypto.createHmac('sha1', sharedSecret).update(username).digest('base64');
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      iceServers: [{ urls: ['stun:stun.l.google.com:19302', ...urls], username, credential }],
+      expiresAt,
+    });
   });
 
   app.post('/api/auth/recover', (req: Request, res: Response) => {
@@ -550,6 +1255,8 @@ async function startServer() {
     const {
       auth_token_hash: _hidden,
       recovery_code_hash: _recoveryHash,
+      auth_username: _authUsername,
+      password_hash: _passwordHash,
       ...safeSelf
     } = recovered.user;
     res.json({
@@ -616,7 +1323,13 @@ async function startServer() {
       .filter((tx) => tx.user_id === user.id)
       .sort((a, b) => b.created_at - a.created_at);
 
-    const { auth_token_hash: _hidden, recovery_code_hash: _recoveryHash, ...safeSelf } = user;
+    const {
+      auth_token_hash: _hidden,
+      recovery_code_hash: _recoveryHash,
+      auth_username: _authUsername,
+      password_hash: _passwordHash,
+      ...safeSelf
+    } = user;
     res.json({
       selfUser: { ...safeSelf, is_self: true, is_online: true },
       personalLink: link,
@@ -628,6 +1341,386 @@ async function startServer() {
     });
   });
 
+  function groupRoomDto(room: ServerGroupRoom, viewerId: string) {
+    const isMember = room.member_ids.includes(viewerId);
+    const viewer = serverDB.users.get(viewerId);
+    return {
+      id: room.id,
+      name_ar: room.name_ar,
+      name_en: room.name_en,
+      description_ar: room.description_ar,
+      description_en: room.description_en,
+      category: room.category,
+      invite_code: isMember && room.category === 'PRIVATE' ? room.invite_code ?? null : null,
+      created_by: room.created_by,
+      host_id: room.host_id,
+      member_count: room.member_ids.length,
+      is_member: isMember,
+      ...(isMember
+        ? {
+            members: room.member_ids.flatMap((memberId) => {
+              const member = serverDB.users.get(memberId);
+              if (
+                !member ||
+                viewer?.blocked_user_ids.includes(memberId) ||
+                member.blocked_user_ids.includes(viewerId)
+              ) {
+                return [];
+              }
+              return [{ id: member.id, nickname: member.nickname }];
+            }),
+          }
+        : {}),
+      is_host: room.host_id === viewerId,
+      created_at: room.created_at,
+      updated_at: room.updated_at,
+      is_active: room.is_active,
+    };
+  }
+
+  function canUseGroupRooms(user: ServerUserRecord, res: Response): boolean {
+    if (user.age === undefined || user.age < 18 || !user.gender) {
+      res.status(403).json({
+        error: 'PROFILE_REQUIRED',
+        message: 'أكمل العمر والجنس من الملف الشخصي قبل استخدام الغرف الجماعية.',
+      });
+      return false;
+    }
+    return true;
+  }
+
+  function verifyGroupRoomPassword(room: ServerGroupRoom, password: string): boolean {
+    if (room.category !== 'PRIVATE') return true;
+    if (password.length < 6 || password.length > 64) return false;
+    const expected = room.password_hash ? Buffer.from(room.password_hash, 'hex') : Buffer.alloc(0);
+    const actual =
+      room.password_salt && password
+        ? crypto.scryptSync(password, room.password_salt, 64)
+        : Buffer.alloc(0);
+    return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+  }
+
+  function addGroupRoomMember(room: ServerGroupRoom, userId: string): void {
+    if (room.member_ids.includes(userId)) return;
+    room.member_ids.push(userId);
+    if (room.member_ids.length === 1 && room.host_id === room.created_by) {
+      room.host_id = userId;
+    }
+    room.updated_at = Date.now();
+    serverDB.scheduleSave();
+    for (const memberId of room.member_ids) {
+      sendToUser(memberId, { type: 'group-room:updated', roomId: room.id });
+    }
+  }
+
+  app.get('/api/group-rooms', (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    if (!user) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    if (!verifyAccountActive(user, res) || !canUseGroupRooms(user, res)) return;
+
+    const rooms = Array.from(serverDB.groupRooms.values())
+      .filter(
+        (room) =>
+          room.is_active &&
+          (room.category !== 'PRIVATE' || room.member_ids.includes(user.id))
+      )
+      .sort((a, b) => b.updated_at - a.updated_at)
+      .map((room) => groupRoomDto(room, user.id));
+    res.json({ rooms });
+  });
+
+  app.post('/api/group-rooms', async (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    if (!user) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    if (!verifyAccountActive(user, res) || !canUseGroupRooms(user, res)) return;
+    if (user.status === 'restricted') {
+      res.status(403).json({ error: 'ACCOUNT_RESTRICTED' });
+      return;
+    }
+
+    const body = (
+      req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+        ? req.body
+        : {}
+    ) as {
+      name_ar?: unknown;
+      name_en?: unknown;
+      description_ar?: unknown;
+      description_en?: unknown;
+      category?: unknown;
+      password?: unknown;
+    };
+    const nameAr = typeof body.name_ar === 'string' ? body.name_ar.trim() : '';
+    const nameEn =
+      typeof body.name_en === 'string' && body.name_en.trim()
+        ? body.name_en.trim().slice(0, 50)
+        : nameAr;
+    const descriptionAr =
+      typeof body.description_ar === 'string' ? body.description_ar.trim().slice(0, 240) : '';
+    const descriptionEn =
+      typeof body.description_en === 'string' ? body.description_en.trim().slice(0, 240) : '';
+    const validCategories: GroupRoomCategory[] = ['PUBLIC', 'PRIVATE', 'HOSTED'];
+    const category = validCategories.find((value) => value === body.category) ?? null;
+    const password = typeof body.password === 'string' ? body.password : '';
+    if (
+      !nameAr ||
+      nameAr.length > 50 ||
+      !category ||
+      (category === 'PRIVATE' && (password.length < 6 || password.length > 64))
+    ) {
+      res.status(400).json({ error: 'INVALID_GROUP_ROOM' });
+      return;
+    }
+
+    const roomModeration = await moderateServerContent(
+      `${nameAr} ${nameEn} ${descriptionAr} ${descriptionEn}`
+    );
+    if (roomModeration.isFrozen) {
+      res.status(400).json({ error: roomModeration.reasonAr || 'وصف الغرفة يخالف إرشادات الأمان.' });
+      return;
+    }
+
+    const now = Date.now();
+    const salt = category === 'PRIVATE' ? crypto.randomBytes(16).toString('hex') : undefined;
+    let inviteCode = crypto.randomBytes(5).toString('hex').toUpperCase();
+    while (
+      Array.from(serverDB.groupRooms.values()).some((existing) => existing.invite_code === inviteCode)
+    ) {
+      inviteCode = crypto.randomBytes(5).toString('hex').toUpperCase();
+    }
+    const room: ServerGroupRoom = {
+      id: `group-${crypto.randomUUID()}`,
+      name_ar: nameAr,
+      name_en: nameEn,
+      description_ar: descriptionAr,
+      description_en: descriptionEn,
+      category,
+      invite_code: inviteCode,
+      created_by: user.id,
+      host_id: user.id,
+      member_ids: [user.id],
+      password_salt: salt,
+      password_hash:
+        salt && category === 'PRIVATE'
+          ? crypto.scryptSync(password, salt, 64).toString('hex')
+          : undefined,
+      created_at: now,
+      updated_at: now,
+      is_active: true,
+    };
+    serverDB.groupRooms.set(room.id, room);
+    serverDB.scheduleSave();
+    broadcastAll({ type: 'group-room:updated', roomId: room.id });
+    res.status(201).json({ room: groupRoomDto(room, user.id) });
+  });
+
+  app.post('/api/group-rooms/:roomId/join', (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    if (!user) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    if (!verifyAccountActive(user, res) || !canUseGroupRooms(user, res)) return;
+
+    const room = serverDB.groupRooms.get(req.params.roomId || '');
+    if (!room || !room.is_active) {
+      res.status(404).json({ error: 'GROUP_ROOM_NOT_FOUND' });
+      return;
+    }
+    if (room.category === 'PRIVATE' && !room.member_ids.includes(user.id)) {
+      const password = typeof req.body?.password === 'string' ? req.body.password : '';
+      if (!verifyGroupRoomPassword(room, password)) {
+        res.status(403).json({ error: 'INVALID_GROUP_ROOM_PASSWORD' });
+        return;
+      }
+    }
+
+    addGroupRoomMember(room, user.id);
+    res.json({ room: groupRoomDto(room, user.id) });
+  });
+
+  app.post('/api/group-rooms/join-by-code', (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    if (!user) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    if (!verifyAccountActive(user, res) || !canUseGroupRooms(user, res)) return;
+
+    const code = typeof req.body?.code === 'string' ? req.body.code.trim().toUpperCase() : '';
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    const room = Array.from(serverDB.groupRooms.values()).find(
+      (candidate) => candidate.invite_code === code && candidate.category === 'PRIVATE'
+    );
+    if (!room || !room.is_active) {
+      res.status(404).json({ error: 'GROUP_ROOM_NOT_FOUND' });
+      return;
+    }
+    if (!verifyGroupRoomPassword(room, password)) {
+      res.status(403).json({ error: 'INVALID_GROUP_ROOM_PASSWORD' });
+      return;
+    }
+
+    addGroupRoomMember(room, user.id);
+    res.json({ room: groupRoomDto(room, user.id) });
+  });
+
+  app.post('/api/group-rooms/:roomId/leave', (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    if (!user) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    const room = serverDB.groupRooms.get(req.params.roomId || '');
+    if (!room || !room.member_ids.includes(user.id)) {
+      res.status(404).json({ error: 'GROUP_ROOM_NOT_FOUND' });
+      return;
+    }
+
+    room.member_ids = room.member_ids.filter((memberId) => memberId !== user.id);
+    if (room.host_id === user.id) room.host_id = room.member_ids[0] || room.created_by;
+    if (room.member_ids.length === 0) room.is_active = false;
+    room.updated_at = Date.now();
+    serverDB.scheduleSave();
+    for (const memberId of room.member_ids) {
+      sendToUser(memberId, { type: 'group-room:updated', roomId: room.id });
+    }
+    res.json({ ok: true });
+  });
+
+  app.get('/api/group-rooms/:roomId/messages', (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    if (!user) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    if (!verifyAccountActive(user, res) || !canUseGroupRooms(user, res)) return;
+    const room = serverDB.groupRooms.get(req.params.roomId || '');
+    if (!room || !room.is_active || !room.member_ids.includes(user.id)) {
+      res.status(404).json({ error: 'GROUP_ROOM_NOT_FOUND' });
+      return;
+    }
+    const messages = Array.from(serverDB.groupMessages.values())
+      .filter((message) => message.room_id === room.id)
+      .filter((message) => {
+        const sender = serverDB.users.get(message.sender_id);
+        return (
+          message.sender_id === user.id ||
+          (!user.blocked_user_ids.includes(message.sender_id) &&
+            !sender?.blocked_user_ids.includes(user.id))
+        );
+      })
+      .sort((a, b) => a.created_at - b.created_at)
+      .slice(-100);
+    res.json({ messages });
+  });
+
+  app.post('/api/group-rooms/:roomId/messages', async (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    if (!user) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    if (!verifyAccountActive(user, res) || !canUseGroupRooms(user, res)) return;
+    if (user.status === 'restricted') {
+      res.status(403).json({ error: 'ACCOUNT_RESTRICTED' });
+      return;
+    }
+
+    const room = serverDB.groupRooms.get(req.params.roomId || '');
+    const content = typeof req.body?.content === 'string' ? req.body.content.trim() : '';
+    const rawMentionedUserIds = req.body?.mentioned_user_ids;
+    if (!room || !room.is_active || !room.member_ids.includes(user.id)) {
+      res.status(404).json({ error: 'GROUP_ROOM_NOT_FOUND' });
+      return;
+    }
+    if (!content || content.length > 1000) {
+      res.status(400).json({ error: 'INVALID_GROUP_MESSAGE' });
+      return;
+    }
+    if (!serverDB.isTrustedMember(user) && containsHyperlink(content)) {
+      res.status(403).json({ error: 'TRUSTED_MEMBER_REQUIRED' });
+      return;
+    }
+    if (
+      rawMentionedUserIds !== undefined &&
+      (!Array.isArray(rawMentionedUserIds) ||
+        rawMentionedUserIds.some(
+          (id) =>
+            typeof id !== 'string' ||
+            id === user.id ||
+            !room.member_ids.includes(id) ||
+            user.blocked_user_ids.includes(id) ||
+            serverDB.users.get(id)?.blocked_user_ids.includes(user.id)
+        ))
+    ) {
+      res.status(400).json({ error: 'INVALID_GROUP_MESSAGE_MENTIONS' });
+      return;
+    }
+    const mentionedUserIds = Array.isArray(rawMentionedUserIds)
+      ? [...new Set(rawMentionedUserIds as string[])]
+      : [];
+
+    const moderation = await moderateServerContent(content);
+    const message: ServerGroupMessage = {
+      id: `group-msg-${crypto.randomUUID()}`,
+      room_id: room.id,
+      sender_id: user.id,
+      content,
+      mentioned_user_ids: mentionedUserIds,
+      created_at: Date.now(),
+      is_frozen: moderation.isFrozen,
+      ai_flag_score: moderation.flagScore,
+      ai_flag_reason: moderation.reasonAr,
+    };
+    serverDB.groupMessages.set(message.id, message);
+    if (!moderation.isFrozen) serverDB.recordAcceptedMessage(user.id);
+    room.updated_at = message.created_at;
+    serverDB.scheduleSave();
+    for (const memberId of room.member_ids) {
+      const member = serverDB.users.get(memberId);
+      if (
+        memberId !== user.id &&
+        (user.blocked_user_ids.includes(memberId) ||
+          member?.blocked_user_ids.includes(user.id))
+      ) {
+        continue;
+      }
+      sendToUser(memberId, {
+        type: 'group-message:new',
+        roomId: room.id,
+        message,
+      });
+    }
+    if (!moderation.isFrozen) {
+      const senderNickname = user.nickname;
+      for (const mentionedUserId of mentionedUserIds) {
+        const mentionedUser = serverDB.users.get(mentionedUserId);
+        if (
+          !mentionedUser ||
+          user.blocked_user_ids.includes(mentionedUserId) ||
+          mentionedUser.blocked_user_ids.includes(user.id)
+        ) {
+          continue;
+        }
+        sendToUser(mentionedUserId, {
+          type: 'group-message:mention',
+          roomId: room.id,
+          senderNickname,
+          roomNameAr: room.name_ar,
+          roomNameEn: room.name_en,
+        });
+      }
+    }
+    res.json({ message });
+  });
+
   // 3. Update Profile & Custom Personal Link Slug
   app.put('/api/profile', async (req: Request, res: Response) => {
     const user = serverDB.authenticateToken(extractBearerToken(req));
@@ -637,17 +1730,55 @@ async function startServer() {
     }
     if (!verifyAccountActive(user, res)) return;
 
-    const { nickname, slug, country, bio, avatar_url, frame_id, interests, languages } =
+    const {
+      nickname,
+      slug,
+      country,
+      bio,
+      age,
+      gender,
+      avatar_url,
+      frame_id,
+      interests,
+      languages,
+    } =
       req.body as {
         nickname?: string;
         slug?: string;
         country?: string;
         bio?: string;
+        age?: number | null;
+        gender?: 'female' | 'male' | 'other' | null;
         avatar_url?: string;
         frame_id?: number;
         interests?: string[];
         languages?: string[];
       };
+
+    if (
+      age !== undefined &&
+      age !== null &&
+      (!Number.isInteger(age) || age < 18 || age > 120)
+    ) {
+      res.status(400).json({ error: 'AGE_MUST_BE_18_OR_OLDER' });
+      return;
+    }
+    if (gender !== undefined && gender !== null && !['female', 'male', 'other'].includes(gender)) {
+      res.status(400).json({ error: 'INVALID_GENDER' });
+      return;
+    }
+
+    const nextNickname = nickname?.trim();
+    if (user.auth_username && nextNickname) {
+      if (nextNickname.length < 3 || nextNickname.length > 24) {
+        res.status(400).json({ error: 'NICKNAME_MUST_BE_3_TO_24_CHARACTERS' });
+        return;
+      }
+      if (serverDB.isUsernameTaken(nextNickname, user.id)) {
+        res.status(409).json({ error: 'NICKNAME_ALREADY_IN_USE' });
+        return;
+      }
+    }
 
     const textToCheck = `${nickname ?? user.nickname} ${bio ?? user.bio}`;
     const isCustomImg = avatar_url?.startsWith('data:image/');
@@ -661,9 +1792,26 @@ async function startServer() {
       return;
     }
 
-    if (nickname?.trim()) user.nickname = nickname.trim().slice(0, 24);
+    if (nextNickname) {
+      if (user.auth_username) {
+        serverDB.usernameIndex.delete(user.auth_username);
+        user.auth_username = normalizeAuthUsername(nextNickname);
+        serverDB.usernameIndex.set(user.auth_username, user.id);
+      }
+      user.nickname = nextNickname.slice(0, 24);
+    }
     if (country) user.country = country.slice(0, 32);
     if (typeof bio === 'string') user.bio = bio.trim().slice(0, 120);
+    if (age === null) {
+      user.age = undefined;
+    } else if (age !== undefined) {
+      user.age = age;
+    }
+    if (gender === null) {
+      user.gender = undefined;
+    } else if (gender !== undefined) {
+      user.gender = gender;
+    }
     if (avatar_url) user.avatar_url = avatar_url;
     if (typeof frame_id === 'number' && (serverDB.isPremiumActive(user) || user.unlocked_frames.includes(frame_id))) {
       user.frame_id = frame_id;
@@ -691,7 +1839,13 @@ async function startServer() {
       peer: serverDB.toPublicUser(user, isUserOnline(user.id)),
     });
 
-    const { auth_token_hash: _hidden, recovery_code_hash: _recoveryHash, ...safeSelf } = user;
+    const {
+      auth_token_hash: _hidden,
+      recovery_code_hash: _recoveryHash,
+      auth_username: _authUsername,
+      password_hash: _passwordHash,
+      ...safeSelf
+    } = user;
     res.json({
       selfUser: { ...safeSelf, is_self: true, is_online: true },
       personalLink: link,
@@ -813,6 +1967,7 @@ async function startServer() {
 
     serverDB.chatRooms.set(room.id, room);
     serverDB.messages.set(message.id, message);
+    serverDB.recordAcceptedMessage(sender.id);
     serverDB.scheduleSave();
 
     sendToUser(recipient.id, {
@@ -829,7 +1984,13 @@ async function startServer() {
       message,
     });
 
-    const { auth_token_hash: _hidden, recovery_code_hash: _recoveryHash, ...safeSender } = sender;
+    const {
+      auth_token_hash: _hidden,
+      recovery_code_hash: _recoveryHash,
+      auth_username: _authUsername,
+      password_hash: _passwordHash,
+      ...safeSender
+    } = sender;
     res.json({
       room: formatRoomForUser(room, sender.id),
       message,
@@ -861,6 +2022,14 @@ async function startServer() {
       targetPeerId?: string;
       introText?: string;
     };
+    if (
+      !serverDB.isTrustedMember(user) &&
+      typeof introText === 'string' &&
+      containsHyperlink(introText)
+    ) {
+      res.status(403).json({ error: 'TRUSTED_MEMBER_REQUIRED' });
+      return;
+    }
     const peer = targetPeerId ? serverDB.users.get(targetPeerId) : undefined;
     if (!peer || peer.id === user.id || peer.status === 'banned') {
       res.status(404).json({ error: 'المستخدم غير متاح حالياً.' });
@@ -948,6 +2117,7 @@ async function startServer() {
 
     serverDB.chatRooms.set(room.id, room);
     serverDB.messages.set(msg.id, msg);
+    serverDB.recordAcceptedMessage(user.id);
     serverDB.scheduleSave();
 
     sendToUser(peer.id, {
@@ -957,7 +2127,13 @@ async function startServer() {
       message: msg,
     });
 
-    const { auth_token_hash: _hidden, recovery_code_hash: _recoveryHash, ...safeSelf } = user;
+    const {
+      auth_token_hash: _hidden,
+      recovery_code_hash: _recoveryHash,
+      auth_username: _authUsername,
+      password_hash: _passwordHash,
+      ...safeSelf
+    } = user;
     res.json({
       room: formatRoomForUser(room, user.id),
       message: msg,
@@ -1050,11 +2226,22 @@ async function startServer() {
 
     const cleanContent = (content || '').trim().slice(0, 2000);
     const mType: MediaType =
-      media_type === 'image' || media_type === 'sticker' || media_type === 'text'
+      media_type === 'image' ||
+      media_type === 'sticker' ||
+      media_type === 'audio' ||
+      media_type === 'video' ||
+      media_type === 'text'
         ? media_type
         : 'text';
     if (!cleanContent && !media_url) {
       res.status(400).json({ error: 'EMPTY_MESSAGE' });
+      return;
+    }
+    if (
+      !serverDB.isTrustedMember(user) &&
+      (mType !== 'text' || Boolean(media_url) || containsHyperlink(cleanContent))
+    ) {
+      res.status(403).json({ error: 'TRUSTED_MEMBER_REQUIRED' });
       return;
     }
 
@@ -1085,15 +2272,61 @@ async function startServer() {
         return;
       }
     }
+    if (mType === 'audio') {
+      const audioMatch =
+        typeof media_url === 'string'
+          ? /^data:audio\/(webm|mp4|ogg|wav|mpeg);base64,([A-Za-z0-9+/]+={0,2})$/.exec(
+              media_url
+            )
+          : null;
+      if (!audioMatch) {
+        res.status(400).json({ error: 'INVALID_AUDIO_ATTACHMENT' });
+        return;
+      }
+      const audioBytes = Buffer.from(audioMatch[2], 'base64');
+      const container = audioMatch[1];
+      const hasValidSignature =
+        container === 'webm'
+          ? audioBytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))
+          : container === 'ogg'
+            ? audioBytes.subarray(0, 4).toString('ascii') === 'OggS'
+            : container === 'wav'
+              ? audioBytes.length >= 12 &&
+                audioBytes.toString('ascii', 0, 4) === 'RIFF' &&
+                audioBytes.toString('ascii', 8, 12) === 'WAVE'
+              : container === 'mp4'
+                ? audioBytes.length >= 12 &&
+                  audioBytes.toString('ascii', 4, 8) === 'ftyp'
+                : audioBytes.length >= 2 &&
+                  audioBytes[0] === 0xff &&
+                  (audioBytes[1] & 0xe0) === 0xe0;
+      if (!audioBytes.length || audioBytes.length > 650 * 1024 || !hasValidSignature) {
+        res.status(400).json({ error: 'INVALID_AUDIO_ATTACHMENT' });
+        return;
+      }
+    }
+    if (mType === 'video') {
+      const videoMatch =
+        typeof media_url === 'string'
+          ? /^data:video\/(mp4|webm);base64,([A-Za-z0-9+/]+={0,2})$/.exec(media_url)
+          : null;
+      if (!videoMatch) {
+        res.status(400).json({ error: 'INVALID_VIDEO_ATTACHMENT' });
+        return;
+      }
+      const videoBytes = Buffer.from(videoMatch[2], 'base64');
+      const hasValidSignature =
+        videoMatch[1] === 'mp4'
+          ? videoBytes.length >= 12 && videoBytes.toString('ascii', 4, 8) === 'ftyp'
+          : videoBytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
+      if (!videoBytes.length || videoBytes.length > 3 * 1024 * 1024 || !hasValidSignature) {
+        res.status(400).json({ error: 'INVALID_VIDEO_ATTACHMENT' });
+        return;
+      }
+    }
     const isImg = Boolean(imageMatch);
-    const mod =
-      mType === 'sticker'
-        ? { flagScore: 0, isFrozen: false, reasonAr: '', reasonEn: '' }
-        : await moderateServerContent(
-            cleanContent,
-            isImg ? media_url : undefined,
-            isImg ? media_url?.slice(5, media_url.indexOf(';')) : undefined
-          );
+    // Private conversations are reviewed through user reports, not automated content scanning.
+    const mod = { flagScore: 0, isFrozen: false, reasonAr: '', reasonEn: '' };
 
     const now = Date.now();
     const message: ServerMessage = {
@@ -1113,6 +2346,7 @@ async function startServer() {
     };
 
     serverDB.messages.set(message.id, message);
+    if (!message.is_frozen) serverDB.recordAcceptedMessage(user.id);
 
     const peerId = room.participant_a === user.id ? room.participant_b : room.participant_a;
     if (!mod.isFrozen) {
@@ -1227,17 +2461,47 @@ async function startServer() {
     const targetType: ReportTargetType = target_type || 'user';
     const reported = reportedUserId ? serverDB.users.get(reportedUserId) : undefined;
     const reportedNick = reported?.nickname || 'مستخدم غير معروف';
+    const groupRoom = roomId ? serverDB.groupRooms.get(roomId) : undefined;
+    if (groupRoom && !groupRoom.member_ids.includes(user.id)) {
+      res.status(403).json({ error: 'FORBIDDEN' });
+      return;
+    }
+    if (groupRoom && reportedUserId && !groupRoom.member_ids.includes(reportedUserId)) {
+      res.status(400).json({ error: 'REPORTED_USER_NOT_IN_GROUP_ROOM' });
+      return;
+    }
+    if (groupRoom && targetType === 'message') {
+      const groupTargetMessage = target_id
+        ? serverDB.groupMessages.get(target_id)
+        : undefined;
+      if (
+        !groupTargetMessage ||
+        groupTargetMessage.room_id !== groupRoom.id ||
+        !reportedUserId ||
+        reportedUserId !== groupTargetMessage.sender_id
+      ) {
+        res.status(400).json({ error: 'INVALID_GROUP_MESSAGE_REPORT' });
+        return;
+      }
+    }
 
     // Capture comprehensive evidence
     let evidenceItems: Array<{ sender: string; content: string; time?: string }> = [];
 
     if (targetType === 'message' && target_id) {
       const msg = serverDB.messages.get(target_id);
-      if (msg) {
+      const groupMessage = serverDB.groupMessages.get(target_id);
+      if (msg && (!roomId || msg.room_id === roomId)) {
         evidenceItems.push({
           sender: msg.sender_id === user.id ? user.nickname : reportedNick,
           content: msg.content,
           time: new Date(msg.created_at).toISOString(),
+        });
+      } else if (groupMessage && groupRoom?.id === groupMessage.room_id) {
+        evidenceItems.push({
+          sender: serverDB.users.get(groupMessage.sender_id)?.nickname || reportedNick,
+          content: groupMessage.content,
+          time: new Date(groupMessage.created_at).toISOString(),
         });
       }
     } else if (targetType === 'vent' && target_id) {
@@ -1262,6 +2526,18 @@ async function startServer() {
           time: new Date(m.created_at).toISOString(),
         }));
       evidenceItems = [...evidenceItems, ...roomMsgs];
+      if (groupRoom) {
+        const groupMsgs = Array.from(serverDB.groupMessages.values())
+         .filter((message) => message.room_id === roomId)
+         .sort((a, b) => a.created_at - b.created_at)
+         .slice(-10)
+         .map((message) => ({
+           sender: serverDB.users.get(message.sender_id)?.nickname || 'مستخدم غير معروف',
+           content: message.content,
+           time: new Date(message.created_at).toISOString(),
+         }));
+        evidenceItems = [...evidenceItems, ...groupMsgs];
+      }
     }
 
     const evidenceStr = JSON.stringify(evidenceItems);
@@ -1962,7 +3238,13 @@ async function startServer() {
       serverDB.paymentTransactions.set(tx.id, tx);
       serverDB.scheduleSave();
 
-      const { auth_token_hash: _hidden, recovery_code_hash: _recoveryHash, ...safeSelf } = user;
+      const {
+        auth_token_hash: _hidden,
+        recovery_code_hash: _recoveryHash,
+        auth_username: _authUsername,
+        password_hash: _passwordHash,
+        ...safeSelf
+      } = user;
       res.json({ ok: true, transaction: tx, selfUser: { ...safeSelf, is_self: true, is_online: true } });
       return;
     } else if (action === 'UNLOCK_QUOTA') {
@@ -1992,7 +3274,13 @@ async function startServer() {
       serverDB.paymentTransactions.set(tx.id, tx);
       serverDB.scheduleSave();
 
-      const { auth_token_hash: _hidden, recovery_code_hash: _recoveryHash, ...safeSelf } = user;
+      const {
+        auth_token_hash: _hidden,
+        recovery_code_hash: _recoveryHash,
+        auth_username: _authUsername,
+        password_hash: _passwordHash,
+        ...safeSelf
+      } = user;
       res.json({ ok: true, transaction: tx, selfUser: { ...safeSelf, is_self: true, is_online: true } });
       return;
     }
@@ -2054,7 +3342,13 @@ async function startServer() {
       return;
     }
 
-    const { auth_token_hash: _hidden, recovery_code_hash: _recoveryHash, ...safeSelf } = user;
+    const {
+      auth_token_hash: _hidden,
+      recovery_code_hash: _recoveryHash,
+      auth_username: _authUsername,
+      password_hash: _passwordHash,
+      ...safeSelf
+    } = user;
     res.json({
       ok: true,
       role: user.role,
@@ -2072,7 +3366,13 @@ async function startServer() {
     if (!verifyAccountActive(user, res)) return;
 
     if (user.role === 'owner' || user.role === 'moderator') {
-      const { auth_token_hash: _hidden, recovery_code_hash: _recoveryHash, ...safeSelf } = user;
+      const {
+        auth_token_hash: _hidden,
+        recovery_code_hash: _recoveryHash,
+        auth_username: _authUsername,
+        password_hash: _passwordHash,
+        ...safeSelf
+      } = user;
       res.json({
         ok: true,
         role: user.role,
@@ -2100,12 +3400,66 @@ async function startServer() {
       return;
     }
 
-    const { auth_token_hash: _hidden, recovery_code_hash: _recoveryHash, ...safeSelf } = user;
+    const {
+      auth_token_hash: _hidden,
+      recovery_code_hash: _recoveryHash,
+      auth_username: _authUsername,
+      password_hash: _passwordHash,
+      ...safeSelf
+    } = user;
     res.json({
       ok: true,
       role: user.role,
       selfUser: { ...safeSelf, is_self: true, is_online: true },
     });
+  });
+
+  app.get('/api/account/ban-appeal', (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    if (!user) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    const appeal = Array.from(serverDB.banAppeals.values()).find(
+      (item) => item.user_id === user.id
+    );
+    res.json({ appeal: appeal ?? null });
+  });
+
+  app.post('/api/account/ban-appeal', (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    if (!user) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    if (user.status !== 'banned') {
+      res.status(409).json({ error: 'ACCOUNT_NOT_BANNED' });
+      return;
+    }
+    const existing = Array.from(serverDB.banAppeals.values()).find(
+      (item) => item.user_id === user.id
+    );
+    if (existing) {
+      res.status(409).json({ error: 'BAN_APPEAL_ALREADY_SUBMITTED', appeal: existing });
+      return;
+    }
+    const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+    if (message.length < 20 || message.length > 2000) {
+      res.status(400).json({ error: 'BAN_APPEAL_MESSAGE_MUST_BE_20_TO_2000_CHARACTERS' });
+      return;
+    }
+    const appeal: ServerBanAppeal = {
+      id: `appeal-${crypto.randomUUID()}`,
+      user_id: user.id,
+      user_nickname: user.nickname,
+      ban_reason: user.ban_reason || 'حظر دائم',
+      message,
+      status: 'PENDING',
+      created_at: Date.now(),
+    };
+    serverDB.banAppeals.set(appeal.id, appeal);
+    serverDB.scheduleSave();
+    res.status(201).json({ appeal });
   });
 
   // Staff Only: Get All Reports
@@ -2121,6 +3475,102 @@ async function startServer() {
     );
 
     res.json({ reports });
+  });
+
+  app.get('/api/admin/ban-appeals', (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    if (!user || (user.role !== 'owner' && user.role !== 'moderator')) {
+      res.status(403).json({ error: 'FORBIDDEN_STAFF_ONLY' });
+      return;
+    }
+    const appeals = Array.from(serverDB.banAppeals.values()).sort(
+      (a, b) => b.created_at - a.created_at
+    );
+    res.json({ appeals });
+  });
+
+  app.post('/api/admin/ban-appeals/:appealId/review', (req: Request, res: Response) => {
+    const staff = serverDB.authenticateToken(extractBearerToken(req));
+    if (!staff || staff.role !== 'owner') {
+      res.status(403).json({ error: 'FORBIDDEN_OWNER_ONLY' });
+      return;
+    }
+    const appeal = serverDB.banAppeals.get(req.params.appealId || '');
+    if (!appeal) {
+      res.status(404).json({ error: 'BAN_APPEAL_NOT_FOUND' });
+      return;
+    }
+    if (appeal.status !== 'PENDING') {
+      res.status(409).json({ error: 'BAN_APPEAL_ALREADY_REVIEWED' });
+      return;
+    }
+    const { decision, note } = (req.body || {}) as {
+      decision?: 'ACCEPT' | 'REJECT';
+      note?: string;
+    };
+    if (decision !== 'ACCEPT' && decision !== 'REJECT') {
+      res.status(400).json({ error: 'INVALID_BAN_APPEAL_DECISION' });
+      return;
+    }
+    const cleanNote = typeof note === 'string' ? note.trim().slice(0, 1000) : '';
+    if (cleanNote.length < 2) {
+      res.status(400).json({ error: 'BAN_APPEAL_REVIEW_NOTE_REQUIRED' });
+      return;
+    }
+    const targetUser = serverDB.users.get(appeal.user_id);
+    if (!targetUser) {
+      res.status(404).json({ error: 'APPEAL_ACCOUNT_NOT_FOUND' });
+      return;
+    }
+    const now = Date.now();
+    appeal.status = decision === 'ACCEPT' ? 'ACCEPTED' : 'REJECTED';
+    appeal.reviewed_at = now;
+    appeal.reviewed_by = staff.id;
+    appeal.reviewed_by_name = staff.nickname;
+    appeal.review_note = cleanNote;
+    if (decision === 'ACCEPT') {
+      targetUser.status = 'active';
+      targetUser.ban_reason = undefined;
+      targetUser.banned_at = undefined;
+      targetUser.warning_message = undefined;
+      targetUser.restriction_reason = undefined;
+      targetUser.suspension_until = undefined;
+    }
+    const auditAction: ServerModerationAction = {
+      id: `act-${crypto.randomUUID().slice(0, 8)}`,
+      moderator_id: staff.id,
+      moderator_name: staff.nickname,
+      moderator_role: staff.role,
+      target_user_id: targetUser.id,
+      target_user_nickname: targetUser.nickname,
+      action_type: decision === 'ACCEPT' ? 'BAN_APPEAL_ACCEPT' : 'BAN_APPEAL_REJECT',
+      reason: cleanNote,
+      created_at: now,
+    };
+    serverDB.moderationActions.set(auditAction.id, auditAction);
+    serverDB.scheduleSave();
+    sendToUser(targetUser.id, {
+      type: 'account:status_updated',
+      status: targetUser.status,
+      warning_message: targetUser.warning_message,
+      restriction_reason: targetUser.restriction_reason,
+      ban_reason: targetUser.ban_reason,
+      suspension_until: targetUser.suspension_until,
+    });
+    broadcastStaff({ type: 'ban_appeal:updated', appeal, auditAction });
+    const {
+      auth_token_hash: _token,
+      recovery_code_hash: _recovery,
+      auth_username: _authUsername,
+      password_hash: _passwordHash,
+      ...safeUser
+    } = targetUser;
+    res.json({
+      ok: true,
+      appeal,
+      auditAction,
+      ...(decision === 'ACCEPT' ? { selfUser: { ...safeUser, is_self: true } } : {}),
+    });
   });
 
   // Staff Only: Take Moderation Action on Report

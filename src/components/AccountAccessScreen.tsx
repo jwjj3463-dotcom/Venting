@@ -11,12 +11,22 @@ import {
   signInWithEmailAndGetIdToken,
   signInWithGoogleAndGetIdToken,
 } from '../services/firebaseAuthentication';
+import { AVATAR_PRESETS } from './FramedAvatar';
+import { TurnstileChallenge } from './TurnstileChallenge';
 
 interface AccountAccessScreenProps {
   busy: boolean;
   error: string;
   purpose?: 'access' | 'link';
-  onCreateAccount: () => void;
+  onCreateAccount: (profile: {
+    nickname: string;
+    password: string;
+    avatar_url: string;
+    age: number;
+    gender: 'female' | 'male' | 'other';
+    turnstileToken: string;
+  }) => void;
+  onGuestLogin: (username: string, password: string) => void;
   onRecoverAccount: (recoveryCode: string) => void;
   onFirebaseLogin: (idToken: string) => void;
   onFirebaseRegister: (idToken: string) => void;
@@ -30,6 +40,7 @@ export const AccountAccessScreen: React.FC<AccountAccessScreenProps> = ({
   error,
   purpose = 'access',
   onCreateAccount,
+  onGuestLogin,
   onRecoverAccount,
   onFirebaseLogin,
   onFirebaseRegister,
@@ -46,9 +57,20 @@ export const AccountAccessScreen: React.FC<AccountAccessScreenProps> = ({
   const [localMessage, setLocalMessage] = useState('');
   const [emailVerificationPending, setEmailVerificationPending] = useState(false);
   const [emailLinkVerificationPending, setEmailLinkVerificationPending] = useState(false);
+  const [guestSignupOpen, setGuestSignupOpen] = useState(false);
+  const [guestAge, setGuestAge] = useState('');
+  const [guestGender, setGuestGender] = useState<'female' | 'male' | 'other' | ''>('');
+  const [guestNickname, setGuestNickname] = useState('');
+  const [guestPassword, setGuestPassword] = useState('');
+  const [guestAvatar, setGuestAvatar] = useState<string>(AVATAR_PRESETS[0]);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [username, setUsername] = useState('');
+  const [usernamePassword, setUsernamePassword] = useState('');
   const isLinking = purpose === 'link';
   const isBusy = busy || localBusy;
   const visibleError = error || localError;
+  const turnstileSiteKey = import.meta.env.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY?.trim() || '';
+  const turnstileRequired = !import.meta.env.DEV;
 
   const runLocal = async (action: () => Promise<void>) => {
     setLocalBusy(true);
@@ -291,6 +313,47 @@ export const AccountAccessScreen: React.FC<AccountAccessScreenProps> = ({
               className="space-y-3 border-t border-white/15 pt-4"
               onSubmit={(event) => {
                 event.preventDefault();
+                onGuestLogin(username, usernamePassword);
+              }}
+            >
+              <p className="text-xs font-bold text-purple-50">الدخول باسم المستخدم</p>
+              <label className="block space-y-1.5 text-xs font-semibold text-purple-50">
+                <span>الاسم المستعار</span>
+                <input
+                  required
+                  minLength={3}
+                  maxLength={24}
+                  autoComplete="username"
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  className="h-11 w-full rounded-xl border border-white/15 bg-[#11101e]/65 px-3 text-sm text-white"
+                />
+              </label>
+              <label className="block space-y-1.5 text-xs font-semibold text-purple-50">
+                <span>كلمة المرور</span>
+                <input
+                  required
+                  type="password"
+                  minLength={8}
+                  maxLength={128}
+                  autoComplete="current-password"
+                  value={usernamePassword}
+                  onChange={(event) => setUsernamePassword(event.target.value)}
+                  className="h-11 w-full rounded-xl border border-white/15 bg-[#11101e]/65 px-3 text-sm text-white"
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={isBusy || !username.trim() || usernamePassword.length < 8}
+                className="min-h-11 w-full rounded-xl border border-white/20 bg-white/10 text-sm font-bold disabled:opacity-50"
+              >
+                {isBusy ? 'جارٍ تسجيل الدخول...' : 'تسجيل الدخول'}
+              </button>
+            </form>
+            <form
+              className="space-y-3 border-t border-white/15 pt-4"
+              onSubmit={(event) => {
+                event.preventDefault();
                 onRecoverAccount(recoveryCode);
               }}
             >
@@ -324,11 +387,126 @@ export const AccountAccessScreen: React.FC<AccountAccessScreenProps> = ({
             <button
               type="button"
               disabled={isBusy}
-              onClick={onCreateAccount}
+              onClick={() => setGuestSignupOpen((open) => !open)}
               className="w-full min-h-[42px] rounded-2xl text-xs text-fuchsia-200 underline disabled:opacity-50"
             >
-              إنشاء حساب مؤقت على هذا الجهاز
+              {guestSignupOpen ? 'إلغاء إنشاء الحساب' : 'إنشاء حساب باسم مستعار وكلمة مرور'}
             </button>
+            {guestSignupOpen && (
+              <form
+                className="space-y-3 rounded-2xl border border-white/15 bg-black/15 p-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const age = Number(guestAge);
+                  if (Number.isInteger(age) && age >= 18 && age <= 120 && guestGender) {
+                    onCreateAccount({
+                      nickname: guestNickname.trim(),
+                      password: guestPassword,
+                      avatar_url: guestAvatar,
+                      age,
+                      gender: guestGender,
+                      turnstileToken,
+                    });
+                  }
+                }}
+              >
+                  <label className="block space-y-1.5 text-xs font-semibold text-purple-50">
+                    <span>الاسم المستعار</span>
+                    <input
+                      required
+                      minLength={3}
+                      maxLength={24}
+                      autoComplete="username"
+                      value={guestNickname}
+                      onChange={(event) => setGuestNickname(event.target.value)}
+                      className="h-11 w-full rounded-xl border border-white/15 bg-[#11101e]/65 px-3 text-sm text-white"
+                    />
+                  </label>
+                  <label className="block space-y-1.5 text-xs font-semibold text-purple-50">
+                    <span>كلمة المرور (8 أحرف على الأقل)</span>
+                    <input
+                      required
+                      type="password"
+                      minLength={8}
+                      maxLength={128}
+                      autoComplete="new-password"
+                      value={guestPassword}
+                      onChange={(event) => setGuestPassword(event.target.value)}
+                      className="h-11 w-full rounded-xl border border-white/15 bg-[#11101e]/65 px-3 text-sm text-white"
+                    />
+                  </label>
+                  <label className="block space-y-1.5 text-xs font-semibold text-purple-50">
+                    <span>الصورة الرمزية</span>
+                    <select
+                      value={guestAvatar}
+                      onChange={(event) => setGuestAvatar(event.target.value)}
+                      className="h-11 w-full rounded-xl border border-white/15 bg-[#11101e]/65 px-3 text-sm text-white"
+                    >
+                      {AVATAR_PRESETS.map((preset) => (
+                        <option key={preset} value={preset}>{preset}</option>
+                      ))}
+                    </select>
+                  </label>
+                  {turnstileSiteKey ? (
+                    <TurnstileChallenge
+                      siteKey={turnstileSiteKey}
+                      onToken={setTurnstileToken}
+                    />
+                  ) : turnstileRequired ? (
+                    <p role="alert" className="text-xs leading-relaxed text-amber-200">
+                      تعذر إنشاء الحساب: لم يُضبط تحقق Cloudflare Turnstile لهذا الإصدار.
+                    </p>
+                  ) : null}
+                  <label className="block space-y-1.5 text-xs font-semibold text-purple-50">
+                  <span>العمر (18 عامًا أو أكثر)</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={18}
+                    max={120}
+                    required
+                    value={guestAge}
+                    onChange={(event) => setGuestAge(event.target.value)}
+                    className="h-11 w-full rounded-xl border border-white/15 bg-[#11101e]/65 px-3 text-sm text-white"
+                  />
+                </label>
+                <label className="block space-y-1.5 text-xs font-semibold text-purple-50">
+                  <span>الجنس</span>
+                  <select
+                    required
+                    value={guestGender}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (value === 'female' || value === 'male' || value === 'other') {
+                        setGuestGender(value);
+                      } else {
+                        setGuestGender('');
+                      }
+                    }}
+                    className="h-11 w-full rounded-xl border border-white/15 bg-[#11101e]/65 px-3 text-sm text-white"
+                  >
+                    <option value="">اختر</option>
+                    <option value="female">أنثى</option>
+                    <option value="male">ذكر</option>
+                    <option value="other">أفضل عدم التحديد</option>
+                  </select>
+                </label>
+                <button
+                  type="submit"
+                  disabled={
+                    isBusy ||
+                    !guestAge ||
+                    !guestGender ||
+                    guestNickname.trim().length < 3 ||
+                    guestPassword.length < 8 ||
+                    (turnstileRequired && !turnstileToken)
+                  }
+                  className="min-h-11 w-full rounded-xl bg-amber-400 text-sm font-bold text-slate-950 disabled:opacity-50"
+                >
+                  {isBusy ? 'جارٍ إنشاء الحساب...' : 'متابعة'}
+                </button>
+              </form>
+            )}
           </>
         )}
 

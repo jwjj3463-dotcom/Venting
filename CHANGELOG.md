@@ -4,6 +4,26 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.13.0 — منظومة الألعاب والغرف والمكالمات ومستويات الثقة | Games, Rooms, Calls, and Trust Levels
+
+### أُضيف
+- كتالوج الألعاب الـ 22 كاملاً مع ساحة ألعاب تفاعلية ومحرك ذكاء اصطناعي تكتيكي للعب الفوري أو تحدي الأصدقاء.
+- دليل الغرف الجماعية العامة والخاصة بكلمات مرور ورموز دعوة، مع دعم الإشارة بالاسم `@mention`.
+- مكالمات صوتية ومرئية مباشرة عبر WebRTC P2P مع إشارات الخادم وأذونات أندرويد.
+- التحقق من البوتات عبر كابتشا Cloudflare Turnstile لحماية التسجيل المجهول.
+- شاشة مخصصة لتقديم التماس فك الحظر للحسابات المحظورة.
+- معمارية مستويات الثقة (عضو موثوق مقابل حساب جديد) لتقييد الروابط والوسائط للحسابات غير الموثقة.
+- دعم إرسال مقاطع الفيديو القصيرة بصيغ MP4 و WebM حتى 3 ميجابايت.
+
+### Added
+- Complete 22 casual games catalog with interactive arena and tactical AI engine for instant play or peer challenges.
+- Group rooms directory for public and password-protected private rooms with invite codes and @mentions.
+- Direct peer-to-peer WebRTC audio and video calling with signaling and Android permissions.
+- Cloudflare Turnstile bot verification on anonymous registration.
+- Dedicated ban appeal submission screen for banned accounts.
+- Trust Level Architecture (Trusted Member vs New Member) restricting links and media for untrusted accounts.
+- Short video messaging support for MP4 and WebM files up to 3MB.
+
 ## 3.12.1 — توضيح حالة عضوية VIP | VIP membership visibility
 
 ### أُصلح
