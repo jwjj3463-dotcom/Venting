@@ -4,6 +4,18 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.14.0 — استضافة الخادم السحابية واستعادة الهوية الأصلية | Cloud Hosting & Original Branding
+
+### أُضيف
+- ربط التطبيق تلقائياً بالخادم السحابي الجديد على Railway بدلاً من الخادم المؤقت.
+- استعادة شعار وهوية تطبيق فضفضة الرسمية الأصلية في شاشة الدخول والتسجيل.
+- تحديث بيئة تشغيل الخادم لدعم Docker وتثبيت الاعتماديات الأساسية تلقائياً.
+
+### Added
+- Native integration with the new production Railway server URL.
+- Restored official Fadfadah app branding and original logo.
+- Enhanced Docker container infrastructure and dependency reliability.
+
 ## 3.13.0 — منظومة الألعاب والغرف والمكالمات ومستويات الثقة | Games, Rooms, Calls, and Trust Levels
 
 ### أُضيف
