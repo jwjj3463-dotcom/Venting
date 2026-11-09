@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Bot, Compass, Heart, MessageSquarePlus, Send, AlertTriangle, MessagesSquare } from 'lucide-react';
+import { Compass, Heart, MessageSquarePlus, Send, AlertTriangle, MessagesSquare, Users } from 'lucide-react';
 import { FramedAvatar, OfficialBadge } from './FramedAvatar';
 import {
   RealmPublicVent,
@@ -114,7 +114,7 @@ export const ExploreVentScreen: React.FC<ExploreVentScreenProps> = ({
         {([
           { id: 'discovery', label: lang === 'ar' ? 'اكتشف' : 'Discover', Icon: Compass },
           { id: 'wall', label: lang === 'ar' ? 'الفضفضة العامة' : 'Public wall', Icon: MessagesSquare },
-          { id: 'bots', label: lang === 'ar' ? 'شخصيات ذكية' : 'AI characters', Icon: Bot },
+          { id: 'bots', label: lang === 'ar' ? 'المتصلون الآن' : 'Active Members', Icon: Users },
         ] as const).map(({ id, label, Icon }) => (
           <button
             key={id}

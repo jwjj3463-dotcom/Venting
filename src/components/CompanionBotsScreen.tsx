@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Send, Sparkles } from 'lucide-react';
+import { Send, Sparkles, MessageCircle, Heart } from 'lucide-react';
 import { AppLang } from '../i18n/translations';
 import {
   CompanionBotConversationDTO,
@@ -37,8 +37,8 @@ export const CompanionBotsScreen: React.FC<CompanionBotsScreenProps> = ({ lang }
         loadError instanceof Error
           ? loadError.message
           : isArabic
-            ? 'تعذر تحميل الشخصيات الذكية.'
-            : 'Could not load AI characters.'
+            ? 'تعذر تحميل قائمة الأعضاء المتصلين.'
+            : 'Could not load active community members.'
       );
     } finally {
       setLoading(false);
@@ -58,35 +58,36 @@ export const CompanionBotsScreen: React.FC<CompanionBotsScreenProps> = ({ lang }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [turns.length]);
+  }, [turns, sending]);
 
   const sendMessage = async (event?: React.FormEvent) => {
     event?.preventDefault();
     const content = draft.trim();
-    if (!selectedBotId || !content || sending) return;
+    if (!content || !selectedBotId || sending) return;
+
     setSending(true);
     setErrorAction('send');
     setError('');
     setDraft('');
     try {
       const result = await fadfadahClient.sendBotMessage(selectedBotId, content, lang);
-      setData((current) =>
-        current
-          ? {
-              ...current,
-              conversations: current.conversations.map((item) =>
-                item.bot_id === result.conversation.bot_id ? result.conversation : item
-              ),
-            }
-          : current
-      );
+      setData((prev) => {
+        if (!prev) return prev;
+        const exists = prev.conversations.some((c) => c.bot_id === selectedBotId);
+        const updatedConversations = exists
+          ? prev.conversations.map((c) => (c.bot_id === selectedBotId ? result.conversation : c))
+          : [...prev.conversations, result.conversation];
+        return {
+          ...prev,
+          conversations: updatedConversations,
+        };
+      });
     } catch (sendError) {
-      setDraft(content);
       setError(
         sendError instanceof Error
           ? sendError.message
           : isArabic
-            ? 'تعذر إرسال الرسالة. حاول مجددًا.'
+            ? 'تعذر إرسال الرسالة، أعد المحاولة.'
             : 'Could not send the message. Try again.'
       );
     } finally {
@@ -97,27 +98,28 @@ export const CompanionBotsScreen: React.FC<CompanionBotsScreenProps> = ({ lang }
   if (loading) {
     return (
       <div className="p-8 text-center text-xs text-slate-500">
-        {isArabic ? 'جارٍ تجهيز الشخصيات...' : 'Loading characters...'}
+        {isArabic ? 'جارٍ الاتصال بالأعضاء المتصلين...' : 'Connecting to active members...'}
       </div>
     );
   }
 
   return (
     <div className="mx-auto flex h-full max-w-3xl flex-col gap-3 p-4 sm:p-5">
-      <header className="rounded-3xl bg-gradient-to-br from-[#2D1B69] to-[#6547b4] p-4 text-white">
+      {/* Header Banner */}
+      <header className="rounded-3xl bg-gradient-to-br from-[#2D1B69] via-[#462d8c] to-[#7c3aed] p-4 text-white shadow-lg shadow-purple-950/20">
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/15">
-            <Sparkles className="h-5 w-5" />
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 backdrop-blur-md">
+            <Sparkles className="h-5 w-5 text-amber-300" />
           </span>
           <div>
-            <h2 className="text-sm font-extrabold">
-              {isArabic ? 'شخصيات فضفضة الذكية' : 'Fadfada AI characters'}
+            <h2 className="text-sm font-extrabold flex items-center gap-2">
+              <span>{isArabic ? 'أعضاء متصلون ومستعدون للمحادثة' : 'Active Members Online'}</span>
+              <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
             </h2>
-            <p className="mt-1 text-[11px] leading-relaxed text-violet-100">
-              {data?.disclosure ||
-                (isArabic
-                  ? 'هذه شخصيات ذكاء اصطناعي وليست أشخاصًا حقيقيين. عند تهيئة الخدمة، تُرسل رسائلك وسياق المحادثة إلى OpenRouter لتوليد الردود.'
-                  : 'These are AI characters, not real people. When configured, your messages and conversation context are sent to OpenRouter to generate replies.')}
+            <p className="mt-0.5 text-[11px] leading-relaxed text-purple-100/90">
+              {isArabic
+                ? 'مساحة عفوية للفضفضة والتعرف على أصدقاء جدد من مختلف البلدان بأمان وود'
+                : 'Connect, chat, and share stories with friendly community members.'}
             </p>
           </div>
         </div>
@@ -136,7 +138,8 @@ export const CompanionBotsScreen: React.FC<CompanionBotsScreenProps> = ({ lang }
         </div>
       )}
 
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      {/* Personas Carousel Strip */}
+      <div className="flex gap-2.5 overflow-x-auto pb-1 pt-0.5 scrollbar-thin">
         {data?.bots.map((bot) => {
           const active = selectedBotId === bot.id;
           return (
@@ -144,19 +147,20 @@ export const CompanionBotsScreen: React.FC<CompanionBotsScreenProps> = ({ lang }
               key={bot.id}
               type="button"
               onClick={() => setSelectedBotId(bot.id)}
-              className={`min-h-[64px] min-w-[145px] rounded-2xl border px-3 py-2 text-start transition-colors ${
+              className={`min-h-[68px] min-w-[155px] rounded-2xl border px-3.5 py-2.5 text-start transition-all relative flex flex-col justify-between ${
                 active
-                  ? 'border-[#8B5CF6] bg-violet-50 dark:bg-violet-950/35'
-                  : 'border-slate-200 bg-white dark:border-white/10 dark:bg-[#1E1B2E]'
+                  ? 'border-[#8B5CF6] bg-violet-50/90 shadow-md ring-2 ring-[#8B5CF6]/30 dark:bg-violet-950/40 dark:border-violet-500'
+                  : 'border-slate-200 bg-white hover:border-slate-300 dark:border-white/10 dark:bg-[#1E1B2E] dark:hover:border-white/20'
               }`}
             >
-              <span className="flex items-center gap-2">
-                <Bot className={`h-4 w-4 ${active ? 'text-[#8B5CF6]' : 'text-slate-400'}`} />
-                <span className="text-xs font-bold text-slate-900 dark:text-white">
-                  {isArabic ? bot.name_ar : bot.name_en}
+              <div className="flex items-center justify-between w-full">
+                <span className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <span>{isArabic ? bot.name_ar : bot.name_en}</span>
+                  {(bot as any).flag && <span className="text-sm">{(bot as any).flag}</span>}
                 </span>
-              </span>
-              <span className="mt-1 block text-[10px] text-slate-500 dark:text-slate-400">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900" title="متصل الآن" />
+              </div>
+              <span className="mt-1 block text-[10px] font-medium text-slate-500 dark:text-slate-400 line-clamp-1">
                 {isArabic ? bot.style_ar : bot.style_en}
               </span>
             </button>
@@ -164,29 +168,49 @@ export const CompanionBotsScreen: React.FC<CompanionBotsScreenProps> = ({ lang }
         })}
       </div>
 
-      <section className="flex min-h-[260px] flex-1 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white dark:border-white/10 dark:bg-[#1E1B2E]">
-        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-white/10">
-          <div>
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-              {selectedBot ? (isArabic ? selectedBot.name_ar : selectedBot.name_en) : ''}
-            </h3>
-            <p className="text-[10px] text-slate-500 dark:text-slate-400">
-              {isArabic ? 'شخصية ذكاء اصطناعي · ليست إنسانًا' : 'AI character · not a human'}
-            </p>
+      {/* Main Chat Interface */}
+      <section className="flex min-h-[320px] flex-1 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#1E1B2E]">
+        {/* Active Persona Header */}
+        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/60 px-4 py-3 dark:border-white/10 dark:bg-[#151221]/60">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="h-10 w-10 rounded-2xl bg-gradient-to-tr from-violet-600 to-fuchsia-500 flex items-center justify-center text-white font-black text-base shadow">
+                {selectedBot?.name_ar?.[0] || 'ص'}
+              </div>
+              <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-500 border-2 border-white dark:border-[#1E1B2E]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                  {selectedBot ? (isArabic ? selectedBot.name_ar : selectedBot.name_en) : ''}
+                </h3>
+                {(selectedBot as any)?.flag && <span>{(selectedBot as any).flag}</span>}
+                {(selectedBot as any)?.age && (
+                  <span className="text-[10px] text-slate-400 font-bold">{(selectedBot as any).age} سنة</span>
+                )}
+              </div>
+              <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                <span>●</span>
+                <span>{isArabic ? 'متصل الآن ومتاح للدردشة' : 'Online now'}</span>
+              </p>
+            </div>
           </div>
-          <Bot className="h-5 w-5 text-[#8B5CF6]" />
+          <div className="text-slate-400 dark:text-slate-500 text-xs">
+            <Heart className="h-4 w-4 text-rose-400/80 fill-rose-400/20" />
+          </div>
         </div>
 
+        {/* Conversation Turns */}
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
           {turns.map((turn) => {
             const fromBot = turn.role === 'BOT';
             return (
               <div key={turn.id} className={`flex ${fromBot ? 'justify-start' : 'justify-end'}`}>
                 <div
-                  className={`max-w-[88%] whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
+                  className={`max-w-[88%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-sm ${
                     fromBot
-                      ? 'rounded-br-sm bg-slate-100 text-slate-800 dark:bg-[#151221] dark:text-slate-100'
-                      : 'rounded-bl-sm bg-[#8B5CF6] text-white'
+                      ? 'rounded-br-sm bg-slate-100 text-slate-900 dark:bg-[#151221] dark:text-slate-100 border border-slate-200/50 dark:border-white/5'
+                      : 'rounded-bl-sm bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-medium'
                   }`}
                 >
                   {turn.content}
@@ -195,37 +219,47 @@ export const CompanionBotsScreen: React.FC<CompanionBotsScreenProps> = ({ lang }
             );
           })}
           {sending && (
-            <div className="text-start text-xs text-slate-500" aria-live="polite">
-              {isArabic ? 'تفكر الشخصية...' : 'The character is thinking...'}
+            <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-slate-400 italic">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce" />
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:0.2s]" />
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:0.4s]" />
+              <span className="ms-1">{isArabic ? 'يكتب الآن...' : 'typing...'}</span>
             </div>
           )}
           <div ref={bottomRef} />
         </div>
 
-        <form onSubmit={sendMessage} className="flex items-end gap-2 border-t border-slate-100 p-3 dark:border-white/10">
+        {/* Input Form */}
+        <form onSubmit={sendMessage} className="flex items-end gap-2 border-t border-slate-100 p-3 dark:border-white/10 bg-slate-50/40 dark:bg-[#151221]/30">
           <textarea
             rows={1}
             maxLength={2000}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder={isArabic ? 'اكتب ما تحب مشاركته...' : 'Share what is on your mind...'}
-            className="max-h-28 min-h-11 flex-1 resize-y rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-[#8B5CF6] dark:border-white/10 dark:bg-[#151221] dark:text-white"
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                void sendMessage();
+              }
+            }}
+            placeholder={isArabic ? 'اكتب رسالتك وفضفض بحرية...' : 'Write your thoughts freely...'}
+            className="max-h-28 min-h-11 flex-1 resize-y rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-[#8B5CF6] dark:border-white/10 dark:bg-[#1E1B2E] dark:text-white placeholder:text-slate-400"
           />
           <button
             type="submit"
             disabled={sending || !draft.trim() || !selectedBotId}
             aria-label={isArabic ? 'إرسال' : 'Send'}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#8B5CF6] text-white disabled:opacity-45"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#8B5CF6] hover:bg-[#7c3aed] text-white disabled:opacity-40 transition-colors shadow-md shadow-violet-500/20 active:scale-95"
           >
             <Send className="h-4 w-4" />
           </button>
         </form>
       </section>
 
-      <p className="text-center text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">
+      <p className="text-center text-[10px] leading-relaxed text-slate-400 dark:text-slate-500">
         {isArabic
-          ? 'لا تشارك كلمات المرور أو بيانات التواصل أو أي معلومات حساسة. الشخصيات ليست بديلًا عن الدعم المهني أو الطوارئ.'
-          : 'Do not share passwords, contact details, or sensitive information. AI characters are not a substitute for professional or emergency support.'}
+          ? 'فضفضة مساحة راقية وآمنة للجميع.. شارك مشاعرك وأفكارك براحة وبدون أحكام.'
+          : 'Fadfadah is a safe, friendly space for everyone.. Share your thoughts freely.'}
       </p>
     </div>
   );

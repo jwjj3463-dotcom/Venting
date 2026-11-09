@@ -4,6 +4,18 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.15.0 — منظومة المجتمع الحي والأعضاء المتصلين | Active Community & Realistic Personas
+
+### 🎭 ميزات جديدة | New Features
+- **إلغاء المظهر الآلي للذكاء الاصطناعي:** تحويل قسم البوتات إلى منظومة «المتصلون الآن» بأعضاء حقيقيين (نور، فيصل، ياسمين، عمر، ريما، وزياد) من مختلف الدول العربية مع أعلام بلدانهم وحالات الاتصال الحية 🟢.
+- **محرك حوار بشري طبيعي:** ردود عفوية دافئة ومخصصة بلهجات عربية أصيلة مع مؤشر كتابة حي (يكتب الآن...) يحاكي التواصل البشري الصادق.
+- **تحديث واجهات الاستكشاف:** بطاقات أعضاء مميزين أنيقة مع بايو واهتمامات واضحة لبدء محادثات فورية.
+
+### 🎭 New Features (English)
+- **Humanized Active Community:** Replaced robotic AI interfaces with realistic Arab community personas featuring active online badges, country flags, and organic bios.
+- **Conversational Realism:** Human-like conversational responses in authentic Arabic dialects with live typing indicators.
+- **Enhanced Discovery UI:** Sleek active members strip and direct messaging experience.
+
 ## 3.14.1 — إصلاح انتقال تسجيل الدخول ومسارات Firebase | Auth Navigation & Firebase Fixes
 
 ### 🛠️ إصلاحات | Bug Fixes

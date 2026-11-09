@@ -36,6 +36,11 @@ import {
   OWNER_MIN_POINTS,
   normalizeAuthUsername,
 } from './server/fadfadahServerDB.ts';
+import {
+  COMMUNITY_PERSONAS,
+  getPersonaConversationsForUser,
+  processPersonaMessage,
+} from './server/communityPersonas.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1287,6 +1292,40 @@ async function startServer() {
     }
     serverDB.linkFirebaseUid(user.id, decoded.uid, decoded.email);
     res.json({ ok: true });
+  });
+
+  // Active Humanized Community Personas Endpoints
+  app.get('/api/bots', (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    const userId = user ? user.id : 'guest';
+    const conversations = getPersonaConversationsForUser(userId);
+    const bots = COMMUNITY_PERSONAS.map((p) => ({
+      id: p.id,
+      name_ar: p.name_ar,
+      name_en: p.name_en,
+      style_ar: p.style_ar,
+      style_en: p.style_en,
+      avatar_url: p.avatar_url,
+      country: p.country_ar,
+      flag: p.flag,
+      bio: p.bio_ar,
+      age: p.age,
+      is_online: true,
+    }));
+    res.json({ bots, conversations });
+  });
+
+  app.post('/api/bots/:botId/messages', async (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    const userId = user ? user.id : 'guest';
+    const botId = req.params.botId;
+    const { content } = (req.body || {}) as { content?: string };
+    if (!content || typeof content !== 'string' || !content.trim()) {
+      res.status(400).json({ error: 'MESSAGE_REQUIRED' });
+      return;
+    }
+    const conversation = await processPersonaMessage(userId, botId, content, getAiClient());
+    res.json({ conversation });
   });
 
   app.post('/api/auth/login', (req: Request, res: Response) => {
