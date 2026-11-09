@@ -101,6 +101,8 @@ export interface ServerUserRecord {
   recovery_code_hash?: string;
   auth_username?: string;
   password_hash?: string;
+  firebase_uid?: string;
+  email?: string;
   nickname: string;
   avatar_url: string;
   frame_id: number;
@@ -431,6 +433,7 @@ export class FadfadahServerDB {
   public users = new Map<string, ServerUserRecord>();
   public tokenIndex = new Map<string, string>(); // tokenHash -> userId
   public usernameIndex = new Map<string, string>(); // normalized username -> userId
+  public firebaseIndex = new Map<string, string>(); // firebase_uid -> userId
   public personalLinks = new Map<string, ServerPersonalLink>(); // linkId -> link
   public slugIndex = new Map<string, string>(); // slug -> linkId
   public chatRooms = new Map<string, ServerChatRoom>();
@@ -478,6 +481,9 @@ export class FadfadahServerDB {
           }
           this.users.set(u.id, u);
           this.tokenIndex.set(u.auth_token_hash, u.id);
+          if (u.firebase_uid) {
+            this.firebaseIndex.set(u.firebase_uid, u.id);
+          }
           if (u.auth_username) {
             this.usernameIndex.set(normalizeAuthUsername(u.auth_username), u.id);
           }
@@ -864,6 +870,89 @@ export class FadfadahServerDB {
     user.last_seen_at = Date.now();
     this.scheduleSave();
     return { user, link, rawToken, recoveryCode: nextRecoveryCode };
+  }
+
+  findUserByFirebaseUid(uid: string): ServerUserRecord | undefined {
+    const userId = this.firebaseIndex.get(uid);
+    if (userId) return this.users.get(userId);
+    return Array.from(this.users.values()).find((u) => u.firebase_uid === uid);
+  }
+
+  loginWithFirebaseUid(uid: string): {
+    user: ServerUserRecord;
+    link: ServerPersonalLink;
+    rawToken: string;
+  } | null {
+    const user = this.findUserByFirebaseUid(uid);
+    if (!user) return null;
+    const link = this.getLinkForUser(user.id);
+    if (!link) return null;
+
+    const rawToken = generateRawToken();
+    this.tokenIndex.delete(user.auth_token_hash);
+    user.auth_token_hash = hashAuthToken(rawToken);
+    this.tokenIndex.set(user.auth_token_hash, user.id);
+    user.last_seen_at = Date.now();
+    this.scheduleSave();
+    return { user, link, rawToken };
+  }
+
+  registerFirebaseUser(params: {
+    uid: string;
+    email?: string;
+    name?: string;
+    picture?: string;
+  }): {
+    user: ServerUserRecord;
+    link: ServerPersonalLink;
+    rawToken: string;
+    recoveryCode: string;
+  } {
+    const existing = this.findUserByFirebaseUid(params.uid);
+    if (existing) {
+      let link = this.getLinkForUser(existing.id);
+      if (!link) {
+        const slug = this.reserveUniqueSlug(existing.nickname, existing.id);
+        link = {
+          id: crypto.randomUUID(),
+          user_id: existing.id,
+          slug,
+          is_active: true,
+          visits_count: 0,
+          created_at: Date.now(),
+        };
+        this.personalLinks.set(link.id, link);
+        this.slugIndex.set(slug, link.id);
+      }
+      const rawToken = generateRawToken();
+      this.tokenIndex.delete(existing.auth_token_hash);
+      existing.auth_token_hash = hashAuthToken(rawToken);
+      this.tokenIndex.set(existing.auth_token_hash, existing.id);
+      this.scheduleSave();
+      return { user: existing, link, rawToken, recoveryCode: '' };
+    }
+
+    const candidateName = params.name?.trim() || params.email?.split('@')[0]?.trim() || '';
+    const nickname = candidateName.slice(0, 24) || `مستخدم_${Math.floor(1000 + Math.random() * 8999)}`;
+    const reg = this.registerNewUser({
+      nickname,
+      avatar_url: params.picture || 'aurora',
+    });
+    reg.user.firebase_uid = params.uid;
+    if (params.email) reg.user.email = params.email;
+    this.firebaseIndex.set(params.uid, reg.user.id);
+    this.scheduleSave();
+    return reg;
+  }
+
+  linkFirebaseUid(userId: string, uid: string, email?: string): boolean {
+    const user = this.users.get(userId);
+    if (!user) return false;
+    user.firebase_uid = uid;
+    if (email) user.email = email;
+    this.firebaseIndex.set(uid, user.id);
+    this.scheduleSave();
+    return true;
   }
 
   claimInitialOwner(userId: string): boolean {

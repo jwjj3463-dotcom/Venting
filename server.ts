@@ -1170,6 +1170,125 @@ async function startServer() {
 
   });
 
+  function parseFirebaseIdToken(token: string): {
+    uid: string;
+    email?: string;
+    name?: string;
+    picture?: string;
+  } | null {
+    if (typeof token !== 'string' || !token.includes('.')) return null;
+    try {
+      const parts = token.split('.');
+      if (parts.length < 2) return null;
+      const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+      const json = Buffer.from(padded, 'base64').toString('utf8');
+      const parsed = JSON.parse(json);
+      const uid =
+        typeof parsed.user_id === 'string'
+          ? parsed.user_id
+          : typeof parsed.sub === 'string'
+            ? parsed.sub
+            : undefined;
+      if (!uid) return null;
+      return {
+        uid,
+        email: typeof parsed.email === 'string' ? parsed.email : undefined,
+        name: typeof parsed.name === 'string' ? parsed.name : undefined,
+        picture: typeof parsed.picture === 'string' ? parsed.picture : undefined,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  // Firebase / Google Authentication Endpoints
+  app.post('/api/auth/firebase/session', (req: Request, res: Response) => {
+    const { idToken } = (req.body || {}) as { idToken?: string };
+    if (!idToken || typeof idToken !== 'string') {
+      res.status(400).json({ error: 'ID_TOKEN_REQUIRED' });
+      return;
+    }
+    const decoded = parseFirebaseIdToken(idToken);
+    if (!decoded) {
+      res.status(400).json({ error: 'INVALID_ID_TOKEN' });
+      return;
+    }
+    const session = serverDB.loginWithFirebaseUid(decoded.uid);
+    if (!session) {
+      // 404 indicates user has not registered yet, triggering automatic client registration
+      res.status(404).json({ error: 'USER_NOT_FOUND' });
+      return;
+    }
+    if (!verifyAccountActive(session.user, res)) return;
+
+    const {
+      auth_token_hash: _hidden,
+      recovery_code_hash: _recoveryHash,
+      auth_username: _authUsername,
+      password_hash: _passwordHash,
+      ...safeSelf
+    } = session.user;
+    res.json({
+      authToken: session.rawToken,
+      selfUser: { ...safeSelf, is_self: true, is_online: true },
+      personalLink: session.link,
+    });
+  });
+
+  app.post('/api/auth/firebase/register', (req: Request, res: Response) => {
+    const { idToken } = (req.body || {}) as { idToken?: string };
+    if (!idToken || typeof idToken !== 'string') {
+      res.status(400).json({ error: 'ID_TOKEN_REQUIRED' });
+      return;
+    }
+    const decoded = parseFirebaseIdToken(idToken);
+    if (!decoded) {
+      res.status(400).json({ error: 'INVALID_ID_TOKEN' });
+      return;
+    }
+    const { user, link, rawToken, recoveryCode } = serverDB.registerFirebaseUser({
+      uid: decoded.uid,
+      email: decoded.email,
+      name: decoded.name,
+      picture: decoded.picture,
+    });
+
+    const {
+      auth_token_hash: _hidden,
+      recovery_code_hash: _recoveryHash,
+      auth_username: _authUsername,
+      password_hash: _passwordHash,
+      ...safeSelf
+    } = user;
+    res.json({
+      authToken: rawToken,
+      recoveryCode,
+      selfUser: { ...safeSelf, is_self: true, is_online: true },
+      personalLink: link,
+    });
+  });
+
+  app.post('/api/auth/firebase/link', (req: Request, res: Response) => {
+    const user = serverDB.authenticateToken(extractBearerToken(req));
+    if (!user) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    const { idToken } = (req.body || {}) as { idToken?: string };
+    if (!idToken || typeof idToken !== 'string') {
+      res.status(400).json({ error: 'ID_TOKEN_REQUIRED' });
+      return;
+    }
+    const decoded = parseFirebaseIdToken(idToken);
+    if (!decoded) {
+      res.status(400).json({ error: 'INVALID_ID_TOKEN' });
+      return;
+    }
+    serverDB.linkFirebaseUid(user.id, decoded.uid, decoded.email);
+    res.json({ ok: true });
+  });
+
   app.post('/api/auth/login', (req: Request, res: Response) => {
     const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
     const password = typeof req.body?.password === 'string' ? req.body.password : '';
