@@ -141,13 +141,15 @@ export const AccountAccessScreen: React.FC<AccountAccessScreenProps> = ({
       {/* ---------------- 4.1 Header (الهيدر والشعار ومبدل اللغات) ---------------- */}
       <header className="relative z-10 w-full max-w-5xl mx-auto flex items-center justify-between px-6 py-4">
         {/* Logo */}
-        <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-2xl bg-amber-400 text-slate-900 font-black text-xl flex items-center justify-center shadow-md shadow-amber-400/20">
-            ص
-          </div>
-          <div className="flex flex-col">
-            <span className="text-base font-extrabold tracking-tight">صحبة · Sohba</span>
-            <span className="text-[10px] text-slate-400">sohba.chat</span>
+        <div className="flex items-center gap-3">
+          <img
+            src="/app-logo.webp"
+            alt="شعار تطبيق فضفضة"
+            className="h-11 w-11 rounded-2xl border border-white/20 object-cover shadow-[0_8px_24px_rgba(197,63,188,0.3)]"
+          />
+          <div className="flex flex-col text-right">
+            <span className="text-base font-extrabold tracking-tight">فضفضة · Fadfadah</span>
+            <span className="text-[10px] text-purple-200/80">مساحتك الآمنة للكلام</span>
           </div>
         </div>
 
@@ -185,7 +187,7 @@ export const AccountAccessScreen: React.FC<AccountAccessScreenProps> = ({
         </div>
 
         <h1 className="text-3xl sm:text-5xl font-black text-white leading-tight sm:leading-snug mb-4 tracking-tight">
-          {lang === 'ar' ? 'الباب مفتوح الليلة.. صحبة ناس حقيقيون' : 'The door is open tonight.. Real people & conversations'}
+          {lang === 'ar' ? 'الباب مفتوح الليلة.. فضفض مع ناس حقيقيين' : 'The door is open tonight.. Real people & honest talks'}
         </h1>
 
         <p className="text-sm sm:text-lg text-slate-300 max-w-xl leading-relaxed mb-8">
@@ -256,8 +258,13 @@ export const AccountAccessScreen: React.FC<AccountAccessScreenProps> = ({
             </button>
 
             <div className="text-center mb-6">
+              <img
+                src="/app-logo.webp"
+                alt="شعار تطبيق فضفضة"
+                className="h-12 w-12 rounded-2xl mx-auto mb-2 border border-white/20 object-cover shadow-[0_4px_16px_rgba(197,63,188,0.3)]"
+              />
               <h2 className="text-xl font-black text-white mb-1">
-                {lang === 'ar' ? 'أنشئ هويتك المجهولة' : 'Create Anonymous Identity'}
+                {lang === 'ar' ? 'أنشئ هويتك في فضفضة' : 'Create Fadfadah Identity'}
               </h2>
               <p className="text-xs text-slate-400">
                 {lang === 'ar' ? 'بياناتك مشفرة ولا تتطلب بريداً أو رقم هاتف' : 'Encrypted zero-friction access'}
