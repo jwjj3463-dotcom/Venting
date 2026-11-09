@@ -340,10 +340,9 @@ export default function App() {
     setAccountAccessError('');
     try {
       const recoveryCode = await action();
+      setAccountAccessRequired(false);
       if (recoveryCode) {
         setRecoveryCodeToSave(recoveryCode);
-      } else {
-        setAccountAccessRequired(false);
       }
     } catch (err) {
       setAccountAccessError(err instanceof Error ? err.message : String(err));
@@ -378,6 +377,7 @@ export default function App() {
     try {
       await fadfadahClient.dismissPendingRecoveryCode();
       setRecoveryCodeToSave('');
+      setAccountAccessRequired(false);
     } catch (err) {
       setAccountAccessError(err instanceof Error ? err.message : String(err));
     }

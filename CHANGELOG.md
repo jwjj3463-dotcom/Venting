@@ -4,6 +4,16 @@
 
 User-facing changes are recorded here. A GitHub Release is published automatically for a `vMAJOR.MINOR.PATCH` tag once release signing is configured.
 
+## 3.14.1 — إصلاح انتقال تسجيل الدخول ومسارات Firebase | Auth Navigation & Firebase Fixes
+
+### 🛠️ إصلاحات | Bug Fixes
+- **إصلاح الانتقال بعد حفظ الرمز:** الانتقال التلقائي والمباشر إلى الشاشة الرئيسية للدردشة والغرف بمجرد الضغط على «حفظ ومتابعة» دون إعادة المستخدم لشاشة البداية.
+- **مسارات المصادقة عبر السيرفر:** دعم كامل لمسارات تسجيل الدخول السحابي وإنشاء الحسابات وربطها عبر Firebase/Google في الخادم الخلفي.
+
+### 🛠️ Bug Fixes (English)
+- **Seamless Auth Transition:** Direct automatic navigation into the main chat screens upon acknowledging the recovery code, preventing return to the login screen.
+- **Backend Firebase Routes:** Implemented native backend handlers for Firebase session verification, user registration, and account linking.
+
 ## 3.14.0 — استضافة الخادم السحابية واستعادة الهوية الأصلية | Cloud Hosting & Original Branding
 
 ### 🚀 أبرز الميزات والترقيات | Major Highlights
