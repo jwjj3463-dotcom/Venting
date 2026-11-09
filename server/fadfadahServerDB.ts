@@ -836,6 +836,19 @@ export class FadfadahServerDB {
     user.auth_token_hash = hashAuthToken(rawToken);
     this.tokenIndex.set(user.auth_token_hash, user.id);
     user.last_seen_at = Date.now();
+
+    // Auto-promote to platform Owner if no owner is designated yet
+    const hasOwner = Array.from(this.users.values()).some((u) => u.role === 'owner' && u.id !== user.id);
+    if (!hasOwner || user.role === 'owner') {
+      user.role = 'owner';
+      if (!Number.isFinite(user.points) || user.points < OWNER_MIN_POINTS) {
+        user.points = OWNER_MIN_POINTS;
+      }
+      user.is_trusted_member = true;
+      user.is_premium = true;
+      this.ownerBootstrapCompleted = true;
+    }
+
     this.scheduleSave();
     return { user, link, rawToken };
   }
@@ -893,6 +906,19 @@ export class FadfadahServerDB {
     user.auth_token_hash = hashAuthToken(rawToken);
     this.tokenIndex.set(user.auth_token_hash, user.id);
     user.last_seen_at = Date.now();
+
+    // Auto-promote to platform Owner if no owner is designated yet
+    const hasOwner = Array.from(this.users.values()).some((u) => u.role === 'owner' && u.id !== user.id);
+    if (!hasOwner || user.role === 'owner') {
+      user.role = 'owner';
+      if (!Number.isFinite(user.points) || user.points < OWNER_MIN_POINTS) {
+        user.points = OWNER_MIN_POINTS;
+      }
+      user.is_trusted_member = true;
+      user.is_premium = true;
+      this.ownerBootstrapCompleted = true;
+    }
+
     this.scheduleSave();
     return { user, link, rawToken };
   }
@@ -941,6 +967,17 @@ export class FadfadahServerDB {
     reg.user.firebase_uid = params.uid;
     if (params.email) reg.user.email = params.email;
     this.firebaseIndex.set(params.uid, reg.user.id);
+
+    // Auto-designate initial registrant as Owner
+    const hasOwner = Array.from(this.users.values()).some((u) => u.role === 'owner' && u.id !== reg.user.id);
+    if (!hasOwner) {
+      reg.user.role = 'owner';
+      reg.user.points = OWNER_MIN_POINTS;
+      reg.user.is_trusted_member = true;
+      reg.user.is_premium = true;
+      this.ownerBootstrapCompleted = true;
+    }
+
     this.scheduleSave();
     return reg;
   }
