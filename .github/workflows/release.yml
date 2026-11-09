@@ -45,7 +45,7 @@ jobs:
 
       - name: Build web app
         env:
-          VITE_API_SERVER_URL: https://fadfada.94.237.56.203.nip.io
+          VITE_API_SERVER_URL: https://web-production-d1043.up.railway.app
           VITE_CLOUDFLARE_TURNSTILE_SITE_KEY: ${{ vars.CLOUDFLARE_TURNSTILE_SITE_KEY }}
         run: npm run build
 
@@ -66,7 +66,7 @@ jobs:
 
       - name: Configure verified Android App Links
         env:
-          ANDROID_APP_LINK_HOST: fadfada.94.237.56.203.nip.io
+          ANDROID_APP_LINK_HOST: web-production-d1043.up.railway.app
         run: node scripts/configure-android-app-links.mjs
 
       - name: Configure AdMob application ID

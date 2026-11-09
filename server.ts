@@ -4111,7 +4111,7 @@ async function startServer() {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {
-        allowedHosts: ['fadfada.94.237.56.203.nip.io'],
+        allowedHosts: true,
         middlewareMode: true,
         watch: null,
       },
