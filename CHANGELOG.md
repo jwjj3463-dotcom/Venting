@@ -6,26 +6,34 @@ User-facing changes are recorded here. A GitHub Release is published automatical
 
 ## 3.14.0 — استضافة الخادم السحابية واستعادة الهوية الأصلية | Cloud Hosting & Original Branding
 
-### أُضيف
-- ربط التطبيق تلقائياً بالخادم السحابي الجديد على Railway بدلاً من الخادم المؤقت.
-- استعادة شعار وهوية تطبيق فضفضة الرسمية الأصلية في شاشة الدخول والتسجيل.
-- تحديث بيئة تشغيل الخادم لدعم Docker وتثبيت الاعتماديات الأساسية تلقائياً.
+### 🚀 أبرز الميزات والترقيات | Major Highlights
+- **النقل إلى السحابة الدائمة (Railway Cloud Infrastructure):** انتقال الخادم الخلفي بالكامل إلى منصة Railway مع حاويات Docker عالية التوفر والجاهزية، وضمان عدم انقطاع الخدمة أو توقف غرف الدردشة.
+- **استعادة الهوية الأصلية:** استعادة شعار تطبيق **فضفضة (Fadfadah)** الرسمي المعتمد والأصلي وإلغاء أي أسماء أو شعارات مؤقتة.
+- **التحديث التلقائي الشامل:** ربط الواجهة وتطبيقات أندرويد تلقائياً بالدومين المشفر الجديد `web-production-d1043.up.railway.app`.
 
-### Added
-- Native integration with the new production Railway server URL.
-- Restored official Fadfadah app branding and original logo.
-- Enhanced Docker container infrastructure and dependency reliability.
+### 🛡️ الأمان والاعتمادية | Security & Reliability
+- إدراج متغيرات البيئة والحماية من الروبوتات (Cloudflare Turnstile) بصورة مدمجة وآمنة داخل الحاوية.
+- اعتماد نظام الترقيم الدلالي الصارم (Semantic Versioning) لضبط التحديثات وتوزيعها المباشر للمستخدمين.
+
+---
+
+### 🚀 Major Highlights (English)
+- **Production Cloud Migration:** Fully transitioned backend services to Railway Docker containers, ensuring high availability and zero-downtime WebSocket hubs.
+- **Branding Restoration:** Restored official Fadfadah branding, original high-res logo asset, and cohesive Arabic UI theme.
+- **Seamless Connectivity:** Automatic binding of mobile client and web links to the verified production domain.
+
+---
 
 ## 3.13.0 — منظومة الألعاب والغرف والمكالمات ومستويات الثقة | Games, Rooms, Calls, and Trust Levels
 
-### أُضيف
-- كتالوج الألعاب الـ 22 كاملاً مع ساحة ألعاب تفاعلية ومحرك ذكاء اصطناعي تكتيكي للعب الفوري أو تحدي الأصدقاء.
-- دليل الغرف الجماعية العامة والخاصة بكلمات مرور ورموز دعوة، مع دعم الإشارة بالاسم `@mention`.
-- مكالمات صوتية ومرئية مباشرة عبر WebRTC P2P مع إشارات الخادم وأذونات أندرويد.
-- التحقق من البوتات عبر كابتشا Cloudflare Turnstile لحماية التسجيل المجهول.
-- شاشة مخصصة لتقديم التماس فك الحظر للحسابات المحظورة.
-- معمارية مستويات الثقة (عضو موثوق مقابل حساب جديد) لتقييد الروابط والوسائط للحسابات غير الموثقة.
-- دعم إرسال مقاطع الفيديو القصيرة بصيغ MP4 و WebM حتى 3 ميجابايت.
+### 🎮 أرينا الألعاب والذكاء الاصطناعي | Gaming Arena & Tactical AI
+- **22 لعبة تفاعلية:** كتالوج كامل يضم 22 لعبة كلاسيكية (إكس-أو، أربعة على التوالي، دومينوز، ريفيرسي، شطرنج مبسط، سفن حربية، بلاك جاك، وألغاز الذاكرة).
+- **محرك الذكاء الاصطناعي التكتيكي:** خوارزميات Minimax و Alpha-Beta Pruning للعب الفردي دون اتصال أو التحدي المباشر داخل غرف المحادثة.
+
+### 📞 الاتصالات والغرف الجماعية | Communications & Group Rooms
+- **مكالمات WebRTC P2P:** مكالمات صوت وفيديو فورية مشفرة بتقنية الندّ للندّ مع إلغاء الصدى والتبديل بين الكاميرات.
+- **دليل الغرف العربية:** غرف جماعية عامة وخاصة مشفرة بكلمات مرور ورموز دعوة، مع نظام الإشارة `@mention`.
+- **معمارية مستويات الثقة:** تمييز الحسابات الموثوقة لحماية المجتمع من الروابط غير الموثوقة وتأمين المحادثات.
 
 ### Added
 - Complete 22 casual games catalog with interactive arena and tactical AI engine for instant play or peer challenges.
